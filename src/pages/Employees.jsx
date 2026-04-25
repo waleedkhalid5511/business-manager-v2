@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './supabase'
+import { supabase } from '../supabase'
 import Employees from './pages/Employees'
 
 export default function App() {
