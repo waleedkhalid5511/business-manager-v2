@@ -1,280 +1,287 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import Employees from './pages/Employees'
 
-export default function App() {
-  const [session, setSession] = useState(null)
+export default function Employees({ profile }) {
+  const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [message, setMessage] = useState('')
+  const [editEmp, setEditEmp] = useState(null)
+  const [form, setForm] = useState({
+    full_name: '', email: '', phone: '',
+    role: 'employee', department: '',
+    designation: '', base_salary: '',
+    joining_date: new Date().toISOString().split('T')[0]
+  })
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setLoading(false)
+  const isAdmin = profile?.role === 'admin'
+  const isManager = profile?.role === 'manager'
+
+  useEffect(() => { fetchEmployees() }, [])
+
+  const fetchEmployees = async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+    setEmployees(data || [])
+    setLoading(false)
+  }
+
+  const handleSubmit = async () => {
+    if (!form.full_name || !form.email) {
+      setMessage('❌ Name aur Email zaroori hain!')
+      return
+    }
+    if (editEmp) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: form.full_name,
+          phone: form.phone,
+          role: form.role,
+          department: form.department,
+          designation: form.designation,
+          base_salary: parseFloat(form.base_salary) || 0,
+          joining_date: form.joining_date
+        })
+        .eq('id', editEmp.id)
+      if (error) setMessage('❌ ' + error.message)
+      else { setMessage('✅ Update ho gaya!'); fetchEmployees(); closeModal() }
+    } else {
+      const { error } = await supabase.auth.signUp({
+        email: form.email,
+        password: 'TempPass123!',
+        options: { data: { full_name: form.full_name, role: form.role } }
+      })
+      if (error) setMessage('❌ ' + error.message)
+      else { setMessage('✅ Employee add ho gaya!'); fetchEmployees(); closeModal() }
+    }
+  }
+
+  const toggleActive = async (emp) => {
+    await supabase.from('profiles').update({ is_active: !emp.is_active }).eq('id', emp.id)
+    fetchEmployees()
+  }
+
+  const openEdit = (emp) => {
+    setEditEmp(emp)
+    setForm({
+      full_name: emp.full_name, email: emp.email,
+      phone: emp.phone || '', role: emp.role,
+      department: emp.department || '',
+      designation: emp.designation || '',
+      base_salary: emp.base_salary || '',
+      joining_date: emp.joining_date || ''
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => { setSession(session) }
-    )
-    return () => subscription.unsubscribe()
-  }, [])
+    setShowModal(true)
+  }
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex', justifyContent: 'center',
-        alignItems: 'center', height: '100vh',
-        background: '#0f172a', color: 'white', fontSize: '18px'
-      }}>
-        Loading...
-      </div>
-    )
+  const closeModal = () => {
+    setShowModal(false); setEditEmp(null)
+    setForm({
+      full_name: '', email: '', phone: '',
+      role: 'employee', department: '',
+      designation: '', base_salary: '',
+      joining_date: new Date().toISOString().split('T')[0]
+    })
+    setMessage('')
+  }
+
+  const roleColor = (role) => {
+    if (role === 'admin') return '#ef4444'
+    if (role === 'manager') return '#f59e0b'
+    return '#3b82f6'
   }
 
   return (
     <div>
-      {!session ? <LoginPage /> : <DashboardPage session={session} />}
-    </div>
-  )
-}
-
-function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError(error.message)
-    setLoading(false)
-  }
-
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
-      display: 'flex', justifyContent: 'center',
-      alignItems: 'center', fontFamily: 'sans-serif'
-    }}>
       <div style={{
-        background: '#1e293b', padding: '40px',
-        borderRadius: '16px', width: '100%', maxWidth: '400px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+        display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', marginBottom: '24px'
       }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-            width: '60px', height: '60px', borderRadius: '16px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 16px', fontSize: '28px'
-          }}>🏢</div>
-          <h1 style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px' }}>
-            Business Manager
-          </h1>
-          <p style={{ color: '#94a3b8', margin: 0, fontSize: '14px' }}>Login Karein</p>
+        <div>
+          <h2 style={{ color: 'white', margin: '0 0 4px', fontSize: '22px' }}>👥 Employees</h2>
+          <p style={{ color: '#94a3b8', margin: 0, fontSize: '13px' }}>{employees.length} total</p>
         </div>
-
-        {error && (
-          <div style={{
-            background: '#7f1d1d', border: '1px solid #ef4444',
-            color: '#fca5a5', padding: '12px', borderRadius: '8px',
-            marginBottom: '20px', fontSize: '14px'
-          }}>⚠️ {error}</div>
+        {(isAdmin || isManager) && (
+          <button onClick={() => setShowModal(true)} style={{
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            border: 'none', borderRadius: '10px', padding: '10px 20px',
+            color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
+          }}>
+            + Employee Add Karo
+          </button>
         )}
-
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
-              Email
-            </label>
-            <input
-              type="email" value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="apni email" required
-              style={{
-                width: '100%', padding: '12px', background: '#0f172a',
-                border: '1px solid #334155', borderRadius: '8px',
-                color: 'white', fontSize: '14px', outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
-              Password
-            </label>
-            <input
-              type="password" value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••" required
-              style={{
-                width: '100%', padding: '12px', background: '#0f172a',
-                border: '1px solid #334155', borderRadius: '8px',
-                color: 'white', fontSize: '14px', outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-          <button
-            type="submit" disabled={loading}
-            style={{
-              width: '100%', padding: '13px',
-              background: loading ? '#334155' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-              border: 'none', borderRadius: '8px', color: 'white',
-              fontSize: '16px', fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? 'Login ho raha hai...' : 'Login Karein'}
-          </button>
-        </form>
       </div>
-    </div>
-  )
-}
 
-function DashboardPage({ session }) {
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('dashboard')
-
-  useEffect(() => { getProfile() }, [])
-
-  const getProfile = async () => {
-    const { data } = await supabase
-      .from('profiles').select('*')
-      .eq('id', session.user.id).single()
-    setProfile(data)
-    setLoading(false)
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-  }
-
-  const menuItems = [
-    { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
-    { id: 'employees', icon: '👥', label: 'Employees' },
-  ]
-
-  if (loading) return <div style={{ color: 'white', padding: '20px' }}>Loading...</div>
-
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
-      {/* Sidebar */}
-      <div style={{
-        width: '220px', background: '#1e293b',
-        borderRight: '1px solid #334155',
-        display: 'flex', flexDirection: 'column',
-        position: 'fixed', height: '100vh', zIndex: 100
-      }}>
+      {loading ? (
+        <div style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>Loading...</div>
+      ) : employees.length === 0 ? (
         <div style={{
-          padding: '20px 16px', borderBottom: '1px solid #334155',
-          display: 'flex', alignItems: 'center', gap: '12px'
+          background: '#1e293b', borderRadius: '12px',
+          padding: '40px', textAlign: 'center', color: '#94a3b8'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+          <p>Koi employee nahi. Add karein!</p>
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '16px'
+        }}>
+          {employees.map(emp => (
+            <div key={emp.id} style={{
+              background: '#1e293b', borderRadius: '12px',
+              padding: '20px', border: '1px solid #334155',
+              opacity: emp.is_active ? 1 : 0.5
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontWeight: 'bold', fontSize: '18px', flexShrink: 0
+                }}>
+                  {emp.full_name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ color: 'white', fontWeight: 'bold', fontSize: '15px' }}>{emp.full_name}</div>
+                  <div style={{ color: '#94a3b8', fontSize: '12px' }}>{emp.email}</div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>Role</span>
+                  <span style={{
+                    background: roleColor(emp.role) + '22',
+                    color: roleColor(emp.role), padding: '2px 10px',
+                    borderRadius: '20px', fontSize: '11px', fontWeight: 'bold',
+                    textTransform: 'capitalize'
+                  }}>{emp.role}</span>
+                </div>
+                {emp.department && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Department</span>
+                    <span style={{ color: 'white', fontSize: '12px' }}>{emp.department}</span>
+                  </div>
+                )}
+                {isAdmin && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Salary</span>
+                    <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 'bold' }}>
+                      PKR {Number(emp.base_salary || 0).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {(isAdmin || isManager) && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => openEdit(emp)} style={{
+                    flex: 1, padding: '8px', background: '#334155',
+                    border: 'none', borderRadius: '8px',
+                    color: 'white', cursor: 'pointer', fontSize: '12px'
+                  }}>✏️ Edit</button>
+                  {isAdmin && (
+                    <button onClick={() => toggleActive(emp)} style={{
+                      flex: 1, padding: '8px',
+                      background: emp.is_active ? '#7f1d1d' : '#14532d',
+                      border: 'none', borderRadius: '8px',
+                      color: emp.is_active ? '#fca5a5' : '#86efac',
+                      cursor: 'pointer', fontSize: '12px'
+                    }}>
+                      {emp.is_active ? '🚫 Deactivate' : '✅ Activate'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', justifyContent: 'center',
+          alignItems: 'center', zIndex: 1000, padding: '20px'
         }}>
           <div style={{
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-            width: '36px', height: '36px', borderRadius: '10px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '18px', flexShrink: 0
-          }}>🏢</div>
-          <span style={{ color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
-            Business Manager
-          </span>
-        </div>
-
-        <nav style={{ flex: 1, padding: '12px 8px' }}>
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center',
-                gap: '12px', padding: '11px 12px', marginBottom: '4px',
-                borderRadius: '10px', border: 'none',
-                background: activeTab === item.id
-                  ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
-                  : 'transparent',
-                color: activeTab === item.id ? 'white' : '#94a3b8',
-                cursor: 'pointer', fontSize: '14px', textAlign: 'left'
-              }}
-            >
-              <span style={{ fontSize: '18px' }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div style={{ padding: '12px 8px', borderTop: '1px solid #334155' }}>
-          {profile && (
-            <div style={{
-              padding: '10px 12px', marginBottom: '8px',
-              background: '#0f172a', borderRadius: '10px'
-            }}>
-              <div style={{ color: 'white', fontSize: '13px', fontWeight: 'bold' }}>
-                {profile.full_name}
+            background: '#1e293b', borderRadius: '16px', padding: '28px',
+            width: '100%', maxWidth: '480px',
+            maxHeight: '90vh', overflowY: 'auto', border: '1px solid #334155'
+          }}>
+            <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '18px' }}>
+              {editEmp ? '✏️ Employee Edit' : '+ Naya Employee'}
+            </h3>
+            {message && (
+              <div style={{
+                background: message.includes('❌') ? '#7f1d1d' : '#14532d',
+                color: message.includes('❌') ? '#fca5a5' : '#86efac',
+                padding: '10px', borderRadius: '8px',
+                marginBottom: '16px', fontSize: '13px'
+              }}>{message}</div>
+            )}
+            {[
+              { label: 'Full Name *', key: 'full_name', type: 'text', placeholder: 'Ali Hassan' },
+              { label: 'Email *', key: 'email', type: 'email', placeholder: 'ali@company.com', disabled: !!editEmp },
+              { label: 'Phone', key: 'phone', type: 'text', placeholder: '03xx-xxxxxxx' },
+              { label: 'Department', key: 'department', type: 'text', placeholder: 'Marketing' },
+              { label: 'Designation', key: 'designation', type: 'text', placeholder: 'Developer' },
+              { label: 'Base Salary (PKR)', key: 'base_salary', type: 'number', placeholder: '50000' },
+              { label: 'Joining Date', key: 'joining_date', type: 'date' },
+            ].map(field => (
+              <div key={field.key} style={{ marginBottom: '12px' }}>
+                <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
+                  {field.label}
+                </label>
+                <input
+                  type={field.type} value={form[field.key]}
+                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                  placeholder={field.placeholder} disabled={field.disabled}
+                  style={{
+                    width: '100%', padding: '10px', background: '#0f172a',
+                    border: '1px solid #334155', borderRadius: '8px',
+                    color: 'white', fontSize: '13px', outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
-              <div style={{ color: '#3b82f6', fontSize: '11px', textTransform: 'capitalize' }}>
-                {profile.role}
-              </div>
+            ))}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Role</label>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                style={{
+                  width: '100%', padding: '10px', background: '#0f172a',
+                  border: '1px solid #334155', borderRadius: '8px',
+                  color: 'white', fontSize: '13px', outline: 'none'
+                }}>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
             </div>
-          )}
-          <button
-            onClick={handleLogout}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center',
-              gap: '12px', padding: '11px 12px', borderRadius: '10px',
-              border: 'none', background: 'transparent',
-              color: '#ef4444', cursor: 'pointer', fontSize: '14px'
-            }}
-          >
-            <span>🚪</span><span>Logout</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div style={{ marginLeft: '220px', flex: 1 }}>
-        {/* Top Bar */}
-        <div style={{
-          background: '#1e293b', borderBottom: '1px solid #334155',
-          padding: '14px 24px', display: 'flex',
-          alignItems: 'center', justifyContent: 'space-between',
-          position: 'sticky', top: 0, zIndex: 50
-        }}>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 'bold' }}>
-            {menuItems.find(m => m.id === activeTab)?.icon}{' '}
-            {menuItems.find(m => m.id === activeTab)?.label}
-          </h2>
-          <div style={{ color: '#94a3b8', fontSize: '13px' }}>
-            {new Date().toLocaleDateString('en-PK', {
-              weekday: 'long', year: 'numeric',
-              month: 'long', day: 'numeric'
-            })}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={closeModal} style={{
+                flex: 1, padding: '11px', background: '#334155',
+                border: 'none', borderRadius: '8px',
+                color: 'white', cursor: 'pointer', fontSize: '14px'
+              }}>Cancel</button>
+              <button onClick={handleSubmit} style={{
+                flex: 2, padding: '11px',
+                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                border: 'none', borderRadius: '8px',
+                color: 'white', cursor: 'pointer',
+                fontSize: '14px', fontWeight: 'bold'
+              }}>{editEmp ? 'Update Karein' : 'Add Karein'}</button>
+            </div>
           </div>
         </div>
-
-        {/* Page Content */}
-        <div style={{ padding: '24px' }}>
-          {activeTab === 'dashboard' && (
-            <div style={{
-              background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
-              borderRadius: '16px', padding: '40px',
-              border: '1px solid #334155'
-            }}>
-              <h2 style={{ color: 'white', margin: '0 0 12px', fontSize: '24px' }}>
-                👋 Welcome, {profile?.full_name}!
-              </h2>
-              <p style={{ color: '#cbd5e1', margin: 0 }}>
-                Business Manager app ready hai! Left menu se pages open karein.
-              </p>
-            </div>
-          )}
-          {activeTab === 'employees' && <Employees profile={profile} />}
-        </div>
-      </div>
+      )}
     </div>
   )
 }
