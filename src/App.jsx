@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import Employees from './pages/Employees'
+import Attendance from './pages/Attendance'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -86,9 +87,7 @@ function LoginPage() {
 
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
-              Email
-            </label>
+            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>Email</label>
             <input
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -102,9 +101,7 @@ function LoginPage() {
             />
           </div>
           <div style={{ marginBottom: '24px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
-              Password
-            </label>
+            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>Password</label>
             <input
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -117,16 +114,13 @@ function LoginPage() {
               }}
             />
           </div>
-          <button
-            type="submit" disabled={loading}
-            style={{
-              width: '100%', padding: '13px',
-              background: loading ? '#334155' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-              border: 'none', borderRadius: '8px', color: 'white',
-              fontSize: '16px', fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
+          <button type="submit" disabled={loading} style={{
+            width: '100%', padding: '13px',
+            background: loading ? '#334155' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+            border: 'none', borderRadius: '8px', color: 'white',
+            fontSize: '16px', fontWeight: 'bold',
+            cursor: loading ? 'not-allowed' : 'pointer'
+          }}>
             {loading ? 'Login ho raha hai...' : 'Login Karein'}
           </button>
         </form>
@@ -150,13 +144,12 @@ function DashboardPage({ session }) {
     setLoading(false)
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-  }
+  const handleLogout = async () => { await supabase.auth.signOut() }
 
   const menuItems = [
     { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
     { id: 'employees', icon: '👥', label: 'Employees' },
+    { id: 'attendance', icon: '📅', label: 'Attendance' },
   ]
 
   if (loading) return <div style={{ color: 'white', padding: '20px' }}>Loading...</div>
@@ -221,15 +214,12 @@ function DashboardPage({ session }) {
               </div>
             </div>
           )}
-          <button
-            onClick={handleLogout}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center',
-              gap: '12px', padding: '11px 12px', borderRadius: '10px',
-              border: 'none', background: 'transparent',
-              color: '#ef4444', cursor: 'pointer', fontSize: '14px'
-            }}
-          >
+          <button onClick={handleLogout} style={{
+            width: '100%', display: 'flex', alignItems: 'center',
+            gap: '12px', padding: '11px 12px', borderRadius: '10px',
+            border: 'none', background: 'transparent',
+            color: '#ef4444', cursor: 'pointer', fontSize: '14px'
+          }}>
             <span>🚪</span><span>Logout</span>
           </button>
         </div>
@@ -237,7 +227,6 @@ function DashboardPage({ session }) {
 
       {/* Main Content */}
       <div style={{ marginLeft: '220px', flex: 1 }}>
-        {/* Top Bar */}
         <div style={{
           background: '#1e293b', borderBottom: '1px solid #334155',
           padding: '14px 24px', display: 'flex',
@@ -256,7 +245,6 @@ function DashboardPage({ session }) {
           </div>
         </div>
 
-        {/* Page Content */}
         <div style={{ padding: '24px' }}>
           {activeTab === 'dashboard' && (
             <div style={{
@@ -268,11 +256,12 @@ function DashboardPage({ session }) {
                 👋 Welcome, {profile?.full_name}!
               </h2>
               <p style={{ color: '#cbd5e1', margin: 0 }}>
-                Business Manager app ready hai! Left menu se pages open karein.
+                Left menu se pages open karein.
               </p>
             </div>
           )}
           {activeTab === 'employees' && <Employees profile={profile} />}
+          {activeTab === 'attendance' && <Attendance profile={profile} />}
         </div>
       </div>
     </div>
