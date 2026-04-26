@@ -6,6 +6,7 @@ import Attendance from './pages/Attendance'
 import Tasks from './pages/Tasks'
 import Payroll from './pages/Payroll'
 import Messages from './pages/Messages'
+import Settings from './pages/Settings'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -78,7 +79,7 @@ function LoginPage() {
           <h1 style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px' }}>
             Business Manager
           </h1>
-          <p style={{ color: '#94a3b8', margin: 0, fontSize: '14px' }}>Login Karein</p>
+          <p style={{ color: '#94a3b8', margin: 0, fontSize: '14px' }}>Login to your account</p>
         </div>
 
         {error && (
@@ -97,7 +98,7 @@ function LoginPage() {
             <input
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="apni email" required
+              placeholder="your@email.com" required
               style={{
                 width: '100%', padding: '12px', background: '#0f172a',
                 border: '1px solid #334155', borderRadius: '8px',
@@ -129,7 +130,7 @@ function LoginPage() {
             fontSize: '16px', fontWeight: 'bold',
             cursor: loading ? 'not-allowed' : 'pointer'
           }}>
-            {loading ? 'Login ho raha hai...' : 'Login Karein'}
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
       </div>
@@ -141,6 +142,7 @@ function DashboardPage({ session }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => { getProfile() }, [])
 
@@ -170,11 +172,14 @@ function DashboardPage({ session }) {
     <div style={{ display: 'flex', minHeight: '100vh', background: '#0f172a', fontFamily: 'sans-serif' }}>
       {/* Sidebar */}
       <div style={{
-        width: '220px', background: '#1e293b',
+        width: sidebarOpen ? '220px' : '70px',
+        background: '#1e293b',
         borderRight: '1px solid #334155',
         display: 'flex', flexDirection: 'column',
-        position: 'fixed', height: '100vh', zIndex: 100
+        position: 'fixed', height: '100vh', zIndex: 100,
+        transition: 'width 0.3s'
       }}>
+        {/* Logo */}
         <div style={{
           padding: '20px 16px', borderBottom: '1px solid #334155',
           display: 'flex', alignItems: 'center', gap: '12px'
@@ -185,11 +190,14 @@ function DashboardPage({ session }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '18px', flexShrink: 0
           }}>🏢</div>
-          <span style={{ color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
-            Business Manager
-          </span>
+          {sidebarOpen && (
+            <span style={{ color: 'white', fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap' }}>
+              Business Manager
+            </span>
+          )}
         </div>
 
+        {/* Nav */}
         <nav style={{ flex: 1, padding: '12px 8px', overflowY: 'auto' }}>
           {menuItems.map(item => (
             <button
@@ -206,19 +214,20 @@ function DashboardPage({ session }) {
                 cursor: 'pointer', fontSize: '14px', textAlign: 'left'
               }}
             >
-              <span style={{ fontSize: '18px' }}>{item.icon}</span>
-              <span>{item.label}</span>
+              <span style={{ fontSize: '18px', flexShrink: 0 }}>{item.icon}</span>
+              {sidebarOpen && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
             </button>
           ))}
         </nav>
 
+        {/* Profile + Logout */}
         <div style={{ padding: '12px 8px', borderTop: '1px solid #334155' }}>
-          {profile && (
+          {profile && sidebarOpen && (
             <div style={{
               padding: '10px 12px', marginBottom: '8px',
               background: '#0f172a', borderRadius: '10px'
             }}>
-              <div style={{ color: 'white', fontSize: '13px', fontWeight: 'bold' }}>
+              <div style={{ color: 'white', fontSize: '13px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {profile.full_name}
               </div>
               <div style={{ color: '#3b82f6', fontSize: '11px', textTransform: 'capitalize' }}>
@@ -232,23 +241,34 @@ function DashboardPage({ session }) {
             border: 'none', background: 'transparent',
             color: '#ef4444', cursor: 'pointer', fontSize: '14px'
           }}>
-            <span>🚪</span><span>Logout</span>
+            <span style={{ fontSize: '18px', flexShrink: 0 }}>🚪</span>
+            {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div style={{ marginLeft: '220px', flex: 1 }}>
+      <div style={{ marginLeft: sidebarOpen ? '220px' : '70px', flex: 1, transition: 'margin-left 0.3s' }}>
+        {/* Top Bar */}
         <div style={{
           background: '#1e293b', borderBottom: '1px solid #334155',
           padding: '14px 24px', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
           position: 'sticky', top: 0, zIndex: 50
         }}>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 'bold' }}>
-            {menuItems.find(m => m.id === activeTab)?.icon}{' '}
-            {menuItems.find(m => m.id === activeTab)?.label}
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={{
+                background: 'transparent', border: 'none',
+                color: '#94a3b8', cursor: 'pointer', fontSize: '20px'
+              }}
+            >☰</button>
+            <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 'bold' }}>
+              {menuItems.find(m => m.id === activeTab)?.icon}{' '}
+              {menuItems.find(m => m.id === activeTab)?.label}
+            </h2>
+          </div>
           <div style={{ color: '#94a3b8', fontSize: '13px' }}>
             {new Date().toLocaleDateString('en-PK', {
               weekday: 'long', year: 'numeric',
@@ -257,25 +277,15 @@ function DashboardPage({ session }) {
           </div>
         </div>
 
+        {/* Page Content */}
         <div style={{ padding: '24px' }}>
-          {activeTab === 'dashboard' && (
-            <Dashboard profile={profile} setActiveTab={setActiveTab} />
-          )}
+          {activeTab === 'dashboard' && <Dashboard profile={profile} setActiveTab={setActiveTab} />}
           {activeTab === 'employees' && <Employees profile={profile} />}
           {activeTab === 'attendance' && <Attendance profile={profile} />}
           {activeTab === 'tasks' && <Tasks profile={profile} />}
           {activeTab === 'payroll' && <Payroll profile={profile} />}
           {activeTab === 'messages' && <Messages profile={profile} />}
-          {activeTab === 'settings' && (
-            <div style={{
-              background: '#1e293b', borderRadius: '12px',
-              padding: '40px', textAlign: 'center',
-              color: '#94a3b8', border: '1px solid #334155'
-            }}>
-              <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚙️</div>
-              <p>Settings page — coming soon!</p>
-            </div>
-          )}
+          {activeTab === 'settings' && <Settings profile={profile} />}
         </div>
       </div>
     </div>
