@@ -14,6 +14,7 @@ export default function Dashboard({ profile, setActiveTab }) {
   })
   const [recentTasks, setRecentTasks] = useState([])
   const [todayAttendance, setTodayAttendance] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
 
   const isAdmin = profile?.role === 'admin'
@@ -32,23 +33,29 @@ export default function Dashboard({ profile, setActiveTab }) {
     const [empRes, attRes, taskRes, leaveRes, payrollRes, recentTaskRes, todayAttRes] = await Promise.all([
       supabase.from('profiles').select('id', { count: 'exact' }).eq('is_active', true),
       supabase.from('attendance').select('status').eq('date', today),
-      supabase.from('tasks').select('id, status', { count: 'exact' }).in('status', ['todo', 'in_progress']),
+      supabase.from('tasks').select('id, status'),
       supabase.from('leave_requests').select('id', { count: 'exact' }).eq('status', 'pending'),
       supabase.from('payroll').select('net_salary').eq('month', currentMonth).eq('year', currentYear),
-      supabase.from('tasks').select('*, profiles!tasks_assigned_to_fkey(full_name)').order('created_at', { ascending: false }).limit(5),
-      supabase.from('attendance').select('*, profiles(full_name)').eq('date', today).order('check_in', { ascending: false }).limit(8)
+      supabase.from('tasks')
+        .select('*, profiles!tasks_assigned_to_fkey(full_name)')
+        .order('created_at', { ascending: false }).limit(5),
+      supabase.from('attendance')
+        .select('*, profiles(full_name)')
+        .eq('date', today)
+        .order('check_in', { ascending: false }).limit(8)
     ])
 
     const attendance = attRes.data || []
     const totalPayroll = payrollRes.data?.reduce((sum, p) => sum + (p.net_salary || 0), 0) || 0
+    const tasks = taskRes.data || []
 
     setStats({
       totalEmployees: empRes.count || 0,
       presentToday: attendance.filter(a => a.status === 'present').length,
       lateToday: attendance.filter(a => a.status === 'late').length,
       absentToday: attendance.filter(a => a.status === 'absent').length,
-      pendingTasks: taskRes.data?.filter(t => t.status === 'todo').length || 0,
-      inProgressTasks: taskRes.data?.filter(t => t.status === 'in_progress').length || 0,
+      pendingTasks: tasks.filter(t => t.status === 'todo').length,
+      inProgressTasks: tasks.filter(t => t.status === 'in_progress').length,
       pendingLeaves: leaveRes.count || 0,
       thisMonthPayroll: totalPayroll
     })
@@ -58,252 +65,334 @@ export default function Dashboard({ profile, setActiveTab }) {
     setLoading(false)
   }
 
-  const priorityColor = (p) => {
-    const c = { low: '#10b981', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444' }
-    return c[p] || '#94a3b8'
-  }
+  const priorityColor = (p) => ({
+    low: '#10b981', medium: '#3b82f6',
+    high: '#f59e0b', urgent: '#ef4444'
+  }[p] || '#94a3b8')
 
-  const statusColor = (s) => {
-    const c = { present: '#10b981', late: '#f59e0b', absent: '#ef4444', on_leave: '#3b82f6' }
-    return c[s] || '#94a3b8'
-  }
+  const statusColor = (s) => ({
+    present: '#10b981', late: '#f59e0b',
+    absent: '#ef4444', on_leave: '#3b82f6'
+  }[s] || '#94a3b8')
 
-  const statusLabel = (s) => {
-    const l = { present: '✅ Present', late: '⏰ Late', absent: '❌ Absent', on_leave: '🏖️ Leave' }
-    return l[s] || s
-  }
+  const statusLabel = (s) => ({
+    present: 'Present', late: 'Late',
+    absent: 'Absent', on_leave: 'On Leave'
+  }[s] || s)
+
+  const taskStatusColor = (s) => ({
+    todo: '#94a3b8', in_progress: '#3b82f6',
+    review: '#f59e0b', done: '#10b981'
+  }[s] || '#94a3b8')
+
+  const taskStatusLabel = (s) => ({
+    todo: 'Todo', in_progress: 'In Progress',
+    review: 'Review', done: 'Done'
+  }[s] || s)
 
   if (loading) return (
-    <div style={{ color: '#94a3b8', textAlign: 'center', padding: '60px', fontSize: '16px' }}>
-      Loading...
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {[1,2,3].map(i => (
+        <div key={i} className="skeleton" style={{ height: '80px', borderRadius: '12px' }} />
+      ))}
     </div>
   )
 
+  const statCards = [
+    { icon: '👥', label: 'Total Employees', value: stats.totalEmployees, color: '#3b82f6', tab: 'employees', trend: '+2 this month' },
+    { icon: '✅', label: 'Present Today', value: stats.presentToday, color: '#10b981', tab: 'attendance', trend: `${Math.round((stats.presentToday / Math.max(stats.totalEmployees, 1)) * 100)}% attendance` },
+    { icon: '⏰', label: 'Late Today', value: stats.lateToday, color: '#f59e0b', tab: 'attendance', trend: 'Check details' },
+    { icon: '❌', label: 'Absent Today', value: stats.absentToday, color: '#ef4444', tab: 'attendance', trend: 'Mark attendance' },
+    { icon: '📋', label: 'Pending Tasks', value: stats.pendingTasks, color: '#8b5cf6', tab: 'tasks', trend: 'Needs assignment' },
+    { icon: '🔄', label: 'In Progress', value: stats.inProgressTasks, color: '#06b6d4', tab: 'tasks', trend: 'Active work' },
+    { icon: '🏖️', label: 'Pending Leaves', value: stats.pendingLeaves, color: '#f97316', tab: 'attendance', trend: 'Needs approval' },
+    { icon: '💰', label: 'Month Payroll', value: `PKR ${stats.thisMonthPayroll.toLocaleString()}`, color: '#10b981', tab: 'payroll', trend: 'This month total' },
+  ]
+
   return (
-    <div>
+    <div className="fade-in">
       {/* Welcome Banner */}
       <div style={{
-        background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
-        borderRadius: '16px', padding: '28px',
-        marginBottom: '24px', border: '1px solid #334155',
+        background: 'linear-gradient(135deg, #0d1f3c 0%, #1a1040 50%, #0d1f3c 100%)',
+        borderRadius: '16px', padding: '28px 32px',
+        marginBottom: '24px',
+        border: '1px solid var(--border)',
         display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', flexWrap: 'wrap', gap: '16px'
+        alignItems: 'center', flexWrap: 'wrap', gap: '16px',
+        position: 'relative', overflow: 'hidden'
       }}>
-        <div>
-          <h2 style={{ color: 'white', margin: '0 0 8px', fontSize: '24px' }}>
-            👋 Welcome back, {profile?.full_name}!
-          </h2>
-          <p style={{ color: '#94a3b8', margin: 0, fontSize: '14px' }}>
-            {new Date().toLocaleDateString('en-PK', {
-              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        {/* Background Glow */}
+        <div style={{
+          position: 'absolute', top: '-40px', right: '10%',
+          width: '200px', height: '200px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)',
+          pointerEvents: 'none'
+        }} />
+
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '28px' }}>👋</span>
+            <h2 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: '700' }}>
+              Welcome back, {profile?.full_name?.split(' ')[0]}!
+            </h2>
+          </div>
+          <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '14px' }}>
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long', year: 'numeric',
+              month: 'long', day: 'numeric'
             })}
           </p>
         </div>
+
         <div style={{
-          background: '#0f172a', borderRadius: '12px',
-          padding: '12px 20px', textAlign: 'center'
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '12px', padding: '14px 20px',
+          textAlign: 'center', border: '1px solid rgba(255,255,255,0.08)'
         }}>
-          <div style={{ color: '#3b82f6', fontSize: '11px', marginBottom: '4px' }}>YOUR ROLE</div>
-          <div style={{ color: 'white', fontWeight: 'bold', textTransform: 'capitalize', fontSize: '16px' }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Your Role
+          </div>
+          <div style={{
+            color: 'white', fontWeight: '700', fontSize: '16px',
+            textTransform: 'capitalize'
+          }}>
             {profile?.role}
           </div>
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-        gap: '14px', marginBottom: '24px'
+        gap: '12px', marginBottom: '24px'
       }}>
-        {[
-          { icon: '👥', label: 'Total Employees', value: stats.totalEmployees, color: '#3b82f6', tab: 'employees' },
-          { icon: '✅', label: 'Present Today', value: stats.presentToday, color: '#10b981', tab: 'attendance' },
-          { icon: '⏰', label: 'Late Today', value: stats.lateToday, color: '#f59e0b', tab: 'attendance' },
-          { icon: '❌', label: 'Absent Today', value: stats.absentToday, color: '#ef4444', tab: 'attendance' },
-          { icon: '📋', label: 'Pending Tasks', value: stats.pendingTasks, color: '#8b5cf6', tab: 'tasks' },
-          { icon: '🔄', label: 'In Progress', value: stats.inProgressTasks, color: '#06b6d4', tab: 'tasks' },
-          { icon: '🏖️', label: 'Pending Leaves', value: stats.pendingLeaves, color: '#f97316', tab: 'attendance' },
-          { icon: '💰', label: 'Month Payroll', value: `PKR ${stats.thisMonthPayroll.toLocaleString()}`, color: '#10b981', tab: 'payroll' },
-        ].map(card => (
+        {statCards.map(card => (
           <div
             key={card.label}
+            className="stat-card"
             onClick={() => setActiveTab(card.tab)}
-            style={{
-              background: '#1e293b', borderRadius: '12px',
-              padding: '18px', border: `1px solid ${card.color}33`,
-              cursor: 'pointer', transition: 'transform 0.2s'
-            }}
+            style={{ '--card-color': card.color }}
           >
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>{card.icon}</div>
-            <div style={{ color: card.color, fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              alignItems: 'flex-start', marginBottom: '12px'
+            }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                background: `${card.color}18`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '18px'
+              }}>
+                {card.icon}
+              </div>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2 12L12 2M12 2H5M12 2V9" stroke={card.color} strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div style={{ color: card.color, fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>
               {card.value}
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '12px' }}>{card.label}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: '500', marginBottom: '4px' }}>
+              {card.label}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+              {card.trend}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Bottom 2 Sections */}
+      {/* Bottom Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '20px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '16px', marginBottom: '16px'
       }}>
         {/* Today's Attendance */}
-        <div style={{
-          background: '#1e293b', borderRadius: '12px',
-          padding: '20px', border: '1px solid #334155'
-        }}>
+        <div className="card">
           <div style={{
             display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: '16px'
           }}>
-            <h3 style={{ color: 'white', margin: 0, fontSize: '16px' }}>
-              📅 Aaj Ki Attendance
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📅</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '15px' }}>
+                Today's Attendance
+              </span>
+            </div>
             <button
               onClick={() => setActiveTab('attendance')}
               style={{
                 background: 'transparent', border: 'none',
-                color: '#3b82f6', cursor: 'pointer', fontSize: '12px'
+                color: 'var(--accent-blue)', cursor: 'pointer',
+                fontSize: '12px', fontWeight: '600'
               }}
             >
-              Sab Dekho →
+              View All →
             </button>
           </div>
 
           {todayAttendance.length === 0 ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px', fontSize: '13px' }}>
-              Aaj koi attendance nahi
+            <div className="empty-state" style={{ padding: '30px 20px' }}>
+              <span className="empty-icon" style={{ fontSize: '32px' }}>📅</span>
+              <span className="empty-desc">No attendance records yet today</span>
             </div>
           ) : (
-            todayAttendance.map(att => (
-              <div key={att.id} style={{
-                display: 'flex', justifyContent: 'space-between',
-                alignItems: 'center', padding: '10px 0',
-                borderBottom: '1px solid #334155'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{
-                    width: '32px', height: '32px', borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'white', fontSize: '13px', fontWeight: 'bold'
-                  }}>
-                    {att.profiles?.full_name?.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{ color: 'white', fontSize: '13px', fontWeight: 'bold' }}>
-                      {att.profiles?.full_name}
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '11px' }}>
-                      {att.check_in ? new Date(att.check_in).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                    </div>
-                  </div>
-                </div>
-                <span style={{
-                  background: statusColor(att.status) + '22',
-                  color: statusColor(att.status),
-                  padding: '3px 10px', borderRadius: '20px',
-                  fontSize: '11px', fontWeight: 'bold'
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {todayAttendance.map(att => (
+                <div key={att.id} style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', padding: '10px 12px',
+                  borderRadius: '8px', background: 'var(--bg-hover)'
                 }}>
-                  {statusLabel(att.status)}
-                </span>
-              </div>
-            ))
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div className="avatar avatar-sm">
+                      {att.profiles?.full_name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}>
+                        {att.profiles?.full_name}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                        {att.check_in
+                          ? new Date(att.check_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                          : '--:--'
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  <span className="badge" style={{
+                    background: `${statusColor(att.status)}18`,
+                    color: statusColor(att.status)
+                  }}>
+                    {statusLabel(att.status)}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
         {/* Recent Tasks */}
-        <div style={{
-          background: '#1e293b', borderRadius: '12px',
-          padding: '20px', border: '1px solid #334155'
-        }}>
+        <div className="card">
           <div style={{
             display: 'flex', justifyContent: 'space-between',
             alignItems: 'center', marginBottom: '16px'
           }}>
-            <h3 style={{ color: 'white', margin: 0, fontSize: '16px' }}>
-              ✅ Recent Tasks
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>✅</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '15px' }}>
+                Recent Tasks
+              </span>
+            </div>
             <button
               onClick={() => setActiveTab('tasks')}
               style={{
                 background: 'transparent', border: 'none',
-                color: '#3b82f6', cursor: 'pointer', fontSize: '12px'
+                color: 'var(--accent-blue)', cursor: 'pointer',
+                fontSize: '12px', fontWeight: '600'
               }}
             >
-              Sab Dekho →
+              View All →
             </button>
           </div>
 
           {recentTasks.length === 0 ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px', fontSize: '13px' }}>
-              Koi task nahi
+            <div className="empty-state" style={{ padding: '30px 20px' }}>
+              <span className="empty-icon" style={{ fontSize: '32px' }}>✅</span>
+              <span className="empty-desc">No tasks yet. Create your first task!</span>
             </div>
           ) : (
-            recentTasks.map(task => (
-              <div key={task.id} style={{
-                padding: '10px 0', borderBottom: '1px solid #334155'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <div style={{ color: 'white', fontSize: '13px', fontWeight: 'bold' }}>
-                    {task.title}
-                  </div>
-                  <span style={{
-                    background: priorityColor(task.priority) + '22',
-                    color: priorityColor(task.priority),
-                    padding: '1px 8px', borderRadius: '20px',
-                    fontSize: '10px', fontWeight: 'bold'
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {recentTasks.map(task => (
+                <div key={task.id} style={{
+                  padding: '10px 12px', borderRadius: '8px',
+                  background: 'var(--bg-hover)',
+                  borderLeft: `3px solid ${priorityColor(task.priority)}`
+                }}>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between',
+                    alignItems: 'center', marginBottom: '4px'
                   }}>
-                    {task.priority}
-                  </span>
+                    <div style={{
+                      color: 'var(--text-primary)', fontSize: '13px',
+                      fontWeight: '600', overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      flex: 1, marginRight: '8px'
+                    }}>
+                      {task.title}
+                    </div>
+                    <span className="badge" style={{
+                      background: `${taskStatusColor(task.status)}18`,
+                      color: taskStatusColor(task.status),
+                      flexShrink: 0
+                    }}>
+                      {taskStatusLabel(task.status)}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center',
+                    gap: '8px', color: 'var(--text-muted)', fontSize: '11px'
+                  }}>
+                    <span>👤 {task.profiles?.full_name || 'Unassigned'}</span>
+                    {task.due_date && (
+                      <span>• 📅 {new Date(task.due_date).toLocaleDateString()}</span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '11px' }}>
-                  👤 {task.profiles?.full_name || 'Unassigned'} •{' '}
-                  {task.due_date ? `📅 ${new Date(task.due_date).toLocaleDateString()}` : 'No deadline'}
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       </div>
 
       {/* Quick Actions */}
-      <div style={{
-        background: '#1e293b', borderRadius: '12px',
-        padding: '20px', border: '1px solid #334155',
-        marginTop: '20px'
-      }}>
-        <h3 style={{ color: 'white', margin: '0 0 16px', fontSize: '16px' }}>
-          ⚡ Quick Actions
-        </h3>
+      <div className="card">
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px'
+        }}>
+          <span>⚡</span>
+          <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '15px' }}>
+            Quick Actions
+          </span>
+        </div>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '12px'
+          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+          gap: '10px'
         }}>
           {[
-            { icon: '👤', label: 'Employee Add', tab: 'employees' },
-            { icon: '📋', label: 'Task Assign', tab: 'tasks' },
-            { icon: '📅', label: 'Attendance', tab: 'attendance' },
-            { icon: '💰', label: 'Payroll', tab: 'payroll' },
-            { icon: '💬', label: 'Messages', tab: 'messages' },
-            { icon: '⚙️', label: 'Settings', tab: 'settings' },
+            { icon: '👤', label: 'Add Employee', tab: 'employees', color: '#3b82f6' },
+            { icon: '✅', label: 'Create Task', tab: 'tasks', color: '#8b5cf6' },
+            { icon: '📅', label: 'Attendance', tab: 'attendance', color: '#10b981' },
+            { icon: '💰', label: 'Payroll', tab: 'payroll', color: '#f59e0b' },
+            { icon: '💬', label: 'Messages', tab: 'messages', color: '#06b6d4' },
+            { icon: '⚙️', label: 'Settings', tab: 'settings', color: '#94a3b8' },
           ].map(action => (
             <button
               key={action.label}
               onClick={() => setActiveTab(action.tab)}
               style={{
-                background: '#0f172a', border: '1px solid #334155',
-                borderRadius: '10px', padding: '16px',
-                color: 'white', cursor: 'pointer',
-                fontSize: '13px', textAlign: 'center',
-                transition: 'border-color 0.2s'
+                background: `${action.color}0d`,
+                border: `1px solid ${action.color}25`,
+                borderRadius: '10px', padding: '16px 12px',
+                color: 'var(--text-primary)', cursor: 'pointer',
+                fontSize: '13px', fontWeight: '500',
+                textAlign: 'center', transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = `${action.color}18`
+                e.currentTarget.style.borderColor = `${action.color}50`
+                e.currentTarget.style.transform = 'translateY(-2px)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = `${action.color}0d`
+                e.currentTarget.style.borderColor = `${action.color}25`
+                e.currentTarget.style.transform = 'translateY(0)'
               }}
             >
-              <div style={{ fontSize: '26px', marginBottom: '8px' }}>{action.icon}</div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{action.icon}</div>
               {action.label}
             </button>
           ))}
