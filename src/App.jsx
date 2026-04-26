@@ -761,17 +761,64 @@ function MainApp({ session }) {
 }
 
 // Module Toggle Component
-function ModuleToggle({ moduleId, role, onToggle }) {
-  const [enabled, setEnabled] = useState(true)
+function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
+  const [enabled, setEnabled] = useState(initialValue !== false)
+
+  useEffect(() => {
+    setEnabled(initialValue !== false)
+  }, [initialValue])
 
   const handleToggle = async () => {
     const newVal = !enabled
     setEnabled(newVal)
-    await onToggle(moduleId, role, 'is_in_dom', newVal)
-    await onToggle(moduleId, role, 'is_in_sidebar', newVal)
-    await onToggle(moduleId, role, 'is_visible', newVal)
+    await onToggle(moduleId, role, newVal)
   }
 
+  const moduleLabels = {
+    dashboard: '🏠 Dashboard',
+    messages: '💬 Messages',
+    projects: '📁 Projects',
+    tasks: '✅ Tasks',
+    attendance: '📅 Attendance',
+    employees: '👥 People',
+    payroll: '💰 Payroll',
+    analytics: '📊 Analytics',
+    files: '📁 Files',
+    settings: '⚙️ Settings',
+    audit_logs: '📋 Audit Logs'
+  }
+
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      background: enabled ? 'rgba(59,130,246,0.05)' : 'var(--bg-card)',
+      borderRadius: '8px', padding: '8px 10px',
+      border: `1px solid ${enabled ? 'rgba(59,130,246,0.2)' : 'var(--border)'}`,
+      transition: 'all 0.2s'
+    }}>
+      <span style={{
+        color: enabled ? 'var(--text-primary)' : 'var(--text-muted)',
+        fontSize: '12px'
+      }}>
+        {moduleLabels[moduleId] || moduleId}
+      </span>
+      <div onClick={handleToggle} style={{
+        width: '36px', height: '20px', borderRadius: '10px',
+        background: enabled ? 'var(--accent-blue)' : 'var(--border)',
+        cursor: 'pointer', position: 'relative',
+        transition: 'background 0.2s', flexShrink: 0
+      }}>
+        <div style={{
+          width: '14px', height: '14px', borderRadius: '50%',
+          background: 'white', position: 'absolute', top: '3px',
+          left: enabled ? '19px' : '3px',
+          transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+        }} />
+      </div>
+    </div>
+  )
+}
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
