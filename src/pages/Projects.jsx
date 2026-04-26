@@ -450,3 +450,182 @@ export default function Projects({ profile }) {
                       <h2 style={{ color: 'white', margin: 0, fontSize: '20px', fontWeight: '700' }}>
                         {showDetail.name}
                       </h2>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '2px' }}>
+                        {showDetail.totalTasks} tasks · {getProgress(showDetail)}% complete
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setShowDetail(null)} className="btn-icon">✕</button>
+              </div>
+
+              {/* Progress */}
+              <div style={{ marginTop: '16px' }}>
+                <div className="progress-bar" style={{ height: '8px' }}>
+                  <div className="progress-fill" style={{
+                    width: `${getProgress(showDetail)}%`,
+                    background: getProgress(showDetail) === 100
+                      ? 'var(--gradient-green)' : 'var(--gradient-blue)'
+                  }} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              {/* Task Stats */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '10px', marginBottom: '20px'
+              }}>
+                {[
+                  { label: 'Total', value: showDetail.totalTasks, color: 'var(--text-primary)' },
+                  { label: 'In Progress', value: showDetail.tasks?.filter(t => t.status === 'in_progress').length || 0, color: '#3b82f6' },
+                  { label: 'Review', value: showDetail.tasks?.filter(t => t.status === 'review').length || 0, color: '#f59e0b' },
+                  { label: 'Done', value: showDetail.doneTasks, color: '#10b981' },
+                ].map(stat => (
+                  <div key={stat.label} style={{
+                    background: 'var(--bg-hover)', borderRadius: '8px', padding: '12px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ color: stat.color, fontSize: '20px', fontWeight: '700', marginBottom: '2px' }}>
+                      {stat.value}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tasks List */}
+              <div>
+                <div style={{
+                  color: 'var(--text-muted)', fontSize: '11px',
+                  fontWeight: '700', textTransform: 'uppercase',
+                  letterSpacing: '0.06em', marginBottom: '12px'
+                }}>
+                  Tasks
+                </div>
+                {projectTasks.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '30px' }}>
+                    <div className="empty-desc">No tasks in this project yet</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {projectTasks.map(task => (
+                      <div key={task.id} style={{
+                        background: 'var(--bg-hover)', borderRadius: '8px',
+                        padding: '12px 14px',
+                        borderLeft: `3px solid ${taskStatusColor(task.status)}`,
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                      }}>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <div style={{
+                            color: 'var(--text-primary)', fontSize: '13px',
+                            fontWeight: '600', marginBottom: '4px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                          }}>
+                            {task.title}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {task.profiles && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '9px' }}>
+                                  {task.profiles.full_name?.charAt(0).toUpperCase()}
+                                </div>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                                  {task.profiles.full_name}
+                                </span>
+                              </div>
+                            )}
+                            {task.due_date && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                                · 📅 {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span className="badge" style={{
+                            background: `${taskStatusColor(task.status)}18`,
+                            color: taskStatusColor(task.status),
+                            fontSize: '10px'
+                          }}>
+                            {task.status?.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Project Modal */}
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '480px' }}>
+            <div style={{
+              padding: '20px 24px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '17px', fontWeight: '700' }}>
+                + New Project
+              </h3>
+              <button onClick={closeModal} className="btn-icon">✕</button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              {message && (
+                <div style={{
+                  background: message.includes('❌') ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                  color: message.includes('❌') ? '#fca5a5' : '#86efac',
+                  padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px'
+                }}>{message}</div>
+              )}
+
+              {[
+                { label: 'Project Name *', key: 'name', type: 'text', placeholder: 'Website Redesign' },
+                { label: 'Description', key: 'description', type: 'text', placeholder: 'Project details...' },
+                { label: 'Client Name', key: 'client_name', type: 'text', placeholder: 'Client Company' },
+                { label: 'Client Email', key: 'client_email', type: 'email', placeholder: 'client@company.com' },
+                { label: 'Deadline', key: 'deadline', type: 'date' },
+                { label: 'Budget (PKR)', key: 'budget', type: 'number', placeholder: '100000' },
+              ].map(field => (
+                <div key={field.key} style={{ marginBottom: '14px' }}>
+                  <label className="input-label">{field.label}</label>
+                  <input type={field.type} value={form[field.key]}
+                    onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                    placeholder={field.placeholder}
+                    className="input"
+                  />
+                </div>
+              ))}
+
+              <div style={{ marginBottom: '20px' }}>
+                <label className="input-label">Priority</label>
+                <select value={form.priority}
+                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                  className="input">
+                  <option value="low">🟢 Low</option>
+                  <option value="medium">🔵 Medium</option>
+                  <option value="high">🟡 High</option>
+                  <option value="urgent">🔴 Urgent</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={closeModal} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                  Cancel
+                </button>
+                <button onClick={createProject} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>
+                  Create Project
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
