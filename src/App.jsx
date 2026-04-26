@@ -193,9 +193,9 @@ function MainApp({ session }) {
   const [showAdminPanel, setShowAdminPanel] = useState(false)
 
   const {
-    canAccess, isInSidebar, presentationMode,
-    togglePresentationMode, toggleModule,
-    permissions, getModulePermission
+    canAccess, isInSidebar,
+    adminVisibleModules, toggleAdminModule, showAllModules,
+    toggleModule, getModulePermission
   } = usePermissions(profile)
 
   const {
@@ -205,28 +205,18 @@ function MainApp({ session }) {
 
   useEffect(() => { getProfile() }, [])
 
-  // 🔐 STEALTH SHORTCUTS — No visible buttons
+  // 🔐 Stealth Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!profile?.role === 'admin') return
-
-      // Ctrl+Shift+A = Secret Admin Panel
+      if (profile?.role !== 'admin') return
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault()
         setShowAdminPanel(prev => !prev)
       }
-
-      // Ctrl+Shift+P = Presentation Mode Toggle
-      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
-        e.preventDefault()
-        if (profile?.role === 'admin') {
-          togglePresentationMode(!presentationMode)
-        }
-      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [profile, presentationMode])
+  }, [profile])
 
   const getProfile = async () => {
     const { data } = await supabase
@@ -269,23 +259,10 @@ function MainApp({ session }) {
     }
   ]
 
-  // Presentation mode modules
-  const PRESENTATION_MODULES = ['dashboard', 'projects', 'tasks', 'messages', 'files']
-
-  // Filter sidebar — STEALTH
+  // Filter sidebar based on permissions
   const filteredNavSections = ALL_NAV_SECTIONS.map(section => ({
     ...section,
-    items: section.items.filter(item => {
-      // Admin always sees everything
-      if (profile?.role === 'admin') {
-        // In presentation mode, admin sidebar also filters
-        if (presentationMode) {
-          return PRESENTATION_MODULES.includes(item.id)
-        }
-        return true
-      }
-      return isInSidebar(item.id)
-    })
+    items: section.items.filter(item => isInSidebar(item.id))
   })).filter(section => section.items.length > 0)
 
   const allItems = ALL_NAV_SECTIONS.flatMap(s => s.items)
@@ -297,10 +274,7 @@ function MainApp({ session }) {
   }
 
   if (loading) return (
-    <div style={{
-      display: 'flex', justifyContent: 'center', alignItems: 'center',
-      height: '100vh', background: 'var(--bg-primary)'
-    }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
       <div className="skeleton" style={{ width: '200px', height: '20px' }} />
     </div>
   )
@@ -308,7 +282,7 @@ function MainApp({ session }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
 
-      {/* ===== SIDEBAR ===== */}
+      {/* SIDEBAR */}
       <div style={{
         width: sidebarCollapsed ? '64px' : '220px',
         background: 'var(--bg-secondary)',
@@ -317,7 +291,6 @@ function MainApp({ session }) {
         transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
         flexShrink: 0, zIndex: 100, overflow: 'hidden'
       }}>
-        {/* Logo */}
         <div style={{
           height: '56px', padding: '0 14px',
           display: 'flex', alignItems: 'center',
@@ -334,22 +307,18 @@ function MainApp({ session }) {
               <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>
                 Business Manager
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                Enterprise
-              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>Enterprise</div>
             </div>
           )}
         </div>
 
-        {/* Nav — Filtered by permissions */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 8px' }}>
           {filteredNavSections.map(section => (
             <div key={section.title} style={{ marginBottom: '8px' }}>
               {!sidebarCollapsed && (
                 <div style={{
                   color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700',
-                  textTransform: 'uppercase', letterSpacing: '0.08em',
-                  padding: '8px 8px 4px'
+                  textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 4px'
                 }}>
                   {section.title}
                 </div>
@@ -367,9 +336,7 @@ function MainApp({ session }) {
                   <span style={{
                     fontSize: '16px', flexShrink: 0,
                     color: activeTab === item.id ? 'var(--accent-blue)' : 'var(--text-muted)'
-                  }}>
-                    {item.icon}
-                  </span>
+                  }}>{item.icon}</span>
                   {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
                 </button>
               ))}
@@ -377,7 +344,6 @@ function MainApp({ session }) {
           ))}
         </nav>
 
-        {/* Profile + Logout */}
         <div style={{ padding: '10px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           {!sidebarCollapsed && profile && (
             <div style={{
@@ -397,15 +363,11 @@ function MainApp({ session }) {
                 <div style={{
                   color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600',
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                }}>
-                  {profile.full_name}
-                </div>
+                }}>{profile.full_name}</div>
                 <div style={{
                   color: roleColor[profile.role] || 'var(--text-muted)',
                   fontSize: '10px', textTransform: 'capitalize'
-                }}>
-                  {profile.role}
-                </div>
+                }}>{profile.role}</div>
               </div>
             </div>
           )}
@@ -420,9 +382,9 @@ function MainApp({ session }) {
         </div>
       </div>
 
-      {/* ===== MAIN AREA ===== */}
+      {/* MAIN AREA */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {/* Top Bar — CLEAN, no admin buttons */}
+        {/* Top Bar — Clean */}
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="btn-icon">
@@ -440,21 +402,14 @@ function MainApp({ session }) {
             </div>
           </div>
 
-          {/* Right side — CLEAN */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'short', month: 'short', day: 'numeric'
-              })}
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
 
             {/* Notification Bell */}
             <div style={{ position: 'relative' }}>
-              <button
-                className="btn-icon"
-                onClick={() => setShowNotifPanel(!showNotifPanel)}
-                style={{ position: 'relative' }}
-              >
+              <button className="btn-icon" onClick={() => setShowNotifPanel(!showNotifPanel)} style={{ position: 'relative' }}>
                 🔔
                 {unreadCount > 0 && (
                   <span style={{
@@ -470,7 +425,6 @@ function MainApp({ session }) {
                 )}
               </button>
 
-              {/* Notifications Panel */}
               {showNotifPanel && (
                 <div style={{
                   position: 'absolute', top: '44px', right: 0,
@@ -484,21 +438,17 @@ function MainApp({ session }) {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
-                        Notifications
-                      </span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>Notifications</span>
                       {unreadCount > 0 && (
                         <span style={{
                           background: 'var(--accent-red)', color: 'white',
-                          borderRadius: '20px', padding: '1px 7px',
-                          fontSize: '11px', fontWeight: '700'
+                          borderRadius: '20px', padding: '1px 7px', fontSize: '11px', fontWeight: '700'
                         }}>{unreadCount}</span>
                       )}
                     </div>
                     <button onClick={markAllRead} style={{
                       background: 'transparent', border: 'none',
-                      color: 'var(--accent-blue)', cursor: 'pointer',
-                      fontSize: '12px', fontWeight: '600'
+                      color: 'var(--accent-blue)', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
                     }}>Mark all read</button>
                   </div>
                   <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
@@ -509,17 +459,14 @@ function MainApp({ session }) {
                       </div>
                     ) : (
                       notifications.map(notif => (
-                        <div
-                          key={notif.id}
-                          onClick={() => markAsRead(notif.id)}
+                        <div key={notif.id} onClick={() => markAsRead(notif.id)}
                           className={`notification ${!notif.is_read ? 'unread' : ''}`}
-                          style={{ margin: '6px 8px', borderRadius: '10px' }}
-                        >
+                          style={{ margin: '6px 8px', borderRadius: '10px' }}>
                           <div style={{
                             width: '36px', height: '36px', borderRadius: '10px',
                             background: notif.is_read ? 'var(--bg-hover)' : 'rgba(59,130,246,0.15)',
-                            display: 'flex', alignItems: 'center',
-                            justifyContent: 'center', fontSize: '18px', flexShrink: 0
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '18px', flexShrink: 0
                           }}>
                             {notificationIcon(notif.type)}
                           </div>
@@ -527,21 +474,15 @@ function MainApp({ session }) {
                             <div style={{
                               color: 'var(--text-primary)', fontSize: '13px',
                               fontWeight: notif.is_read ? '400' : '600', marginBottom: '2px'
-                            }}>
-                              {notif.title}
-                            </div>
+                            }}>{notif.title}</div>
                             {notif.body && (
                               <div style={{
                                 color: 'var(--text-muted)', fontSize: '12px',
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                              }}>
-                                {notif.body}
-                              </div>
+                              }}>{notif.body}</div>
                             )}
                             <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>
-                              {new Date(notif.created_at).toLocaleTimeString('en-US', {
-                                hour: '2-digit', minute: '2-digit'
-                              })}
+                              {new Date(notif.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
                           {!notif.is_read && (
@@ -582,35 +523,27 @@ function MainApp({ session }) {
               {activeTab === 'projects' && <Projects profile={profile} />}
               {activeTab === 'payroll' && <Payroll profile={profile} />}
               {activeTab === 'messages' && <Messages profile={profile} />}
-              {activeTab === 'settings' && (
-                <Settings
-                  profile={profile}
-                  presentationMode={presentationMode}
-                  togglePresentationMode={togglePresentationMode}
-                  toggleModule={toggleModule}
-                  permissions={permissions}
-                />
-              )}
+              {activeTab === 'settings' && <Settings profile={profile} />}
             </>
           )}
         </div>
       </div>
 
-      {/* ===== SECRET ADMIN PANEL — No visible trigger ===== */}
+      {/* SECRET ADMIN PANEL — Ctrl+Shift+A */}
       {showAdminPanel && profile?.role === 'admin' && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
           zIndex: 9999, display: 'flex', justifyContent: 'center',
-          alignItems: 'center', padding: '20px',
-          backdropFilter: 'blur(8px)'
+          alignItems: 'center', padding: '20px', backdropFilter: 'blur(8px)'
         }} onClick={() => setShowAdminPanel(false)}>
           <div style={{
             background: 'var(--bg-card)', borderRadius: '20px',
-            width: '100%', maxWidth: '720px', maxHeight: '85vh',
+            width: '100%', maxWidth: '680px', maxHeight: '88vh',
             overflowY: 'auto', border: '1px solid var(--border)',
             animation: 'bounceIn 0.3s ease'
           }} onClick={e => e.stopPropagation()}>
 
+            {/* Header */}
             <div style={{
               padding: '20px 24px', borderBottom: '1px solid var(--border)',
               background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
@@ -619,80 +552,117 @@ function MainApp({ session }) {
             }}>
               <div>
                 <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '700' }}>
-                  Control Panel
+                  Visibility Control
                 </h2>
                 <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: '12px' }}>
-                  Ctrl+Shift+A to open/close · Ctrl+Shift+P for presentation mode
+                  Ctrl+Shift+A to open/close
                 </p>
               </div>
-              <button onClick={() => setShowAdminPanel(false)} className="btn-icon" style={{ color: 'white' }}>
-                ✕
-              </button>
+              <button onClick={() => setShowAdminPanel(false)} className="btn-icon" style={{ color: 'white' }}>✕</button>
             </div>
 
             <div style={{ padding: '24px' }}>
-              {/* Presentation Mode Toggle */}
+
+              {/* ===== MY SIDEBAR ===== */}
               <div style={{
                 background: 'var(--bg-hover)', borderRadius: '12px',
                 padding: '16px', marginBottom: '20px',
-                border: `1px solid ${presentationMode ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`
+                border: '1px solid var(--border)'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
-                    <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px' }}>
-                      Presentation Mode
+                    <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px' }}>
+                      My Sidebar
                     </div>
                     <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-                      {presentationMode ? '✅ Active — Client-safe view' : 'Show clean view for screen sharing'}
+                      Toggle what YOU see — changes save instantly
                     </div>
                   </div>
-                  <div onClick={() => togglePresentationMode(!presentationMode)} style={{
-                    width: '52px', height: '28px', borderRadius: '14px',
-                    background: presentationMode ? '#10b981' : 'var(--border)',
-                    cursor: 'pointer', position: 'relative',
-                    transition: 'background 0.2s', flexShrink: 0
+                  <button onClick={showAllModules} style={{
+                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    borderRadius: '6px', padding: '5px 12px',
+                    color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px'
                   }}>
-                    <div style={{
-                      width: '22px', height: '22px', borderRadius: '50%',
-                      background: 'white', position: 'absolute', top: '3px',
-                      left: presentationMode ? '27px' : '3px',
-                      transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)'
-                    }} />
-                  </div>
+                    Reset All
+                  </button>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
+                  gap: '8px'
+                }}>
+                  {[
+                    { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
+                    { id: 'messages', icon: '💬', label: 'Messages' },
+                    { id: 'projects', icon: '📁', label: 'Projects' },
+                    { id: 'tasks', icon: '✅', label: 'Tasks' },
+                    { id: 'attendance', icon: '📅', label: 'Attendance' },
+                    { id: 'employees', icon: '👥', label: 'People' },
+                    { id: 'payroll', icon: '💰', label: 'Payroll' },
+                    { id: 'settings', icon: '⚙️', label: 'Settings' },
+                  ].map(mod => {
+                    const isOn = adminVisibleModules.includes(mod.id)
+                    return (
+                      <div key={mod.id} onClick={() => toggleAdminModule(mod.id)} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                        background: isOn ? 'rgba(59,130,246,0.1)' : 'var(--bg-card)',
+                        border: `1px solid ${isOn ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
+                        transition: 'all 0.2s'
+                      }}>
+                        <span style={{
+                          fontSize: '13px',
+                          color: isOn ? 'var(--text-primary)' : 'var(--text-muted)'
+                        }}>
+                          {mod.icon} {mod.label}
+                        </span>
+                        <div style={{
+                          width: '36px', height: '20px', borderRadius: '10px',
+                          background: isOn ? 'var(--accent-blue)' : 'var(--border)',
+                          position: 'relative', flexShrink: 0, transition: 'background 0.2s'
+                        }}>
+                          <div style={{
+                            width: '14px', height: '14px', borderRadius: '50%',
+                            background: 'white', position: 'absolute', top: '3px',
+                            left: isOn ? '19px' : '3px',
+                            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Module Visibility */}
+              {/* ===== PARTNER & EMPLOYEE ===== */}
               <div style={{
                 color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
               }}>
-                Module Visibility Control
+                Partner & Employee Permissions
               </div>
 
-              {['partner', 'employee', 'client'].map(role => (
+              {['partner', 'employee'].map(role => (
                 <div key={role} style={{
                   background: 'var(--bg-hover)', borderRadius: '12px',
-                  padding: '16px', marginBottom: '12px',
-                  border: '1px solid var(--border)'
+                  padding: '16px', marginBottom: '12px', border: '1px solid var(--border)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                     <span style={{
-                      background: `${{ partner: '#8b5cf6', employee: '#3b82f6', client: '#10b981' }[role]}22`,
-                      color: { partner: '#8b5cf6', employee: '#3b82f6', client: '#10b981' }[role],
+                      background: `${{ partner: '#8b5cf6', employee: '#3b82f6' }[role]}22`,
+                      color: { partner: '#8b5cf6', employee: '#3b82f6' }[role],
                       padding: '3px 10px', borderRadius: '20px',
                       fontSize: '12px', fontWeight: '700', textTransform: 'capitalize'
-                    }}>
-                      {role}
-                    </span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>view permissions</span>
+                    }}>{role}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>can see these modules</span>
                   </div>
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
                     gap: '8px'
                   }}>
-                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'employees', 'payroll', 'files', 'settings'].map(moduleId => (
+                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'employees', 'payroll', 'settings'].map(moduleId => (
                       <ModuleToggle
                         key={`${moduleId}-${role}`}
                         moduleId={moduleId}
@@ -704,35 +674,6 @@ function MainApp({ session }) {
                   </div>
                 </div>
               ))}
-
-              {/* Quick Access */}
-              <div style={{
-                color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
-                textTransform: 'uppercase', letterSpacing: '0.08em',
-                marginBottom: '12px', marginTop: '8px'
-              }}>
-                Quick Access
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                {[
-                  { label: 'Payroll', icon: '💰', tab: 'payroll' },
-                  { label: 'People', icon: '👥', tab: 'employees' },
-                  { label: 'Attendance', icon: '📅', tab: 'attendance' },
-                  { label: 'Settings', icon: '⚙️', tab: 'settings' },
-                ].map(item => (
-                  <button key={item.label} onClick={() => {
-                    setActiveTab(item.tab)
-                    setShowAdminPanel(false)
-                  }} style={{
-                    background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                    borderRadius: '10px', padding: '14px', color: 'var(--text-primary)',
-                    cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '22px', marginBottom: '6px' }}>{item.icon}</div>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         </div>
@@ -760,15 +701,10 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
   }
 
   const moduleLabels = {
-    dashboard: '🏠 Dashboard',
-    messages: '💬 Messages',
-    projects: '📁 Projects',
-    tasks: '✅ Tasks',
-    attendance: '📅 Attendance',
-    employees: '👥 People',
-    payroll: '💰 Payroll',
-    files: '📁 Files',
-    settings: '⚙️ Settings',
+    dashboard: '🏠 Dashboard', messages: '💬 Messages',
+    projects: '📁 Projects', tasks: '✅ Tasks',
+    attendance: '📅 Attendance', employees: '👥 People',
+    payroll: '💰 Payroll', files: '📁 Files', settings: '⚙️ Settings',
   }
 
   return (
@@ -779,17 +715,13 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
       border: `1px solid ${enabled ? 'rgba(59,130,246,0.25)' : 'var(--border)'}`,
       transition: 'all 0.2s'
     }}>
-      <span style={{
-        color: enabled ? 'var(--text-primary)' : 'var(--text-muted)',
-        fontSize: '12px'
-      }}>
+      <span style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: '12px' }}>
         {moduleLabels[moduleId] || moduleId}
       </span>
       <div onClick={handleToggle} style={{
         width: '36px', height: '20px', borderRadius: '10px',
         background: enabled ? 'var(--accent-blue)' : 'var(--border)',
-        cursor: 'pointer', position: 'relative',
-        transition: 'background 0.2s', flexShrink: 0
+        cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0
       }}>
         <div style={{
           width: '14px', height: '14px', borderRadius: '50%',
