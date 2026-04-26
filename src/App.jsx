@@ -10,6 +10,7 @@ import Payroll from './pages/Payroll'
 import Messages from './pages/Messages'
 import Settings from './pages/Settings'
 import Projects from './pages/Projects'
+import TimeTracking from './pages/TimeTracking'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -205,7 +206,6 @@ function MainApp({ session }) {
 
   useEffect(() => { getProfile() }, [])
 
-  // 🔐 Stealth Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (profile?.role !== 'admin') return
@@ -242,6 +242,7 @@ function MainApp({ session }) {
         { id: 'projects', icon: '📁', label: 'Projects' },
         { id: 'tasks', icon: '✦', label: 'Tasks' },
         { id: 'attendance', icon: '◷', label: 'Attendance' },
+        { id: 'timetracking', icon: '⏱', label: 'Time Logs' },
       ]
     },
     {
@@ -259,7 +260,6 @@ function MainApp({ session }) {
     }
   ]
 
-  // Filter sidebar based on permissions
   const filteredNavSections = ALL_NAV_SECTIONS.map(section => ({
     ...section,
     items: section.items.filter(item => isInSidebar(item.id))
@@ -384,7 +384,6 @@ function MainApp({ session }) {
 
       {/* MAIN AREA */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {/* Top Bar — Clean */}
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="btn-icon">
@@ -407,7 +406,6 @@ function MainApp({ session }) {
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
 
-            {/* Notification Bell */}
             <div style={{ position: 'relative' }}>
               <button className="btn-icon" onClick={() => setShowNotifPanel(!showNotifPanel)} style={{ position: 'relative' }}>
                 🔔
@@ -523,13 +521,14 @@ function MainApp({ session }) {
               {activeTab === 'projects' && <Projects profile={profile} />}
               {activeTab === 'payroll' && <Payroll profile={profile} />}
               {activeTab === 'messages' && <Messages profile={profile} />}
+              {activeTab === 'timetracking' && <TimeTracking profile={profile} />}
               {activeTab === 'settings' && <Settings profile={profile} />}
             </>
           )}
         </div>
       </div>
 
-      {/* SECRET ADMIN PANEL — Ctrl+Shift+A */}
+      {/* SECRET ADMIN PANEL */}
       {showAdminPanel && profile?.role === 'admin' && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
@@ -543,7 +542,6 @@ function MainApp({ session }) {
             animation: 'bounceIn 0.3s ease'
           }} onClick={e => e.stopPropagation()}>
 
-            {/* Header */}
             <div style={{
               padding: '20px 24px', borderBottom: '1px solid var(--border)',
               background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
@@ -562,12 +560,10 @@ function MainApp({ session }) {
             </div>
 
             <div style={{ padding: '24px' }}>
-
-              {/* ===== MY SIDEBAR ===== */}
+              {/* My Sidebar */}
               <div style={{
                 background: 'var(--bg-hover)', borderRadius: '12px',
-                padding: '16px', marginBottom: '20px',
-                border: '1px solid var(--border)'
+                padding: '16px', marginBottom: '20px', border: '1px solid var(--border)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
@@ -575,18 +571,15 @@ function MainApp({ session }) {
                       My Sidebar
                     </div>
                     <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-                      Toggle what YOU see — changes save instantly
+                      Toggle what YOU see — perfect for screen sharing
                     </div>
                   </div>
                   <button onClick={showAllModules} style={{
                     background: 'var(--bg-card)', border: '1px solid var(--border)',
                     borderRadius: '6px', padding: '5px 12px',
                     color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px'
-                  }}>
-                    Reset All
-                  </button>
+                  }}>Reset All</button>
                 </div>
-
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
@@ -598,6 +591,7 @@ function MainApp({ session }) {
                     { id: 'projects', icon: '📁', label: 'Projects' },
                     { id: 'tasks', icon: '✅', label: 'Tasks' },
                     { id: 'attendance', icon: '📅', label: 'Attendance' },
+                    { id: 'timetracking', icon: '⏱️', label: 'Time Logs' },
                     { id: 'employees', icon: '👥', label: 'People' },
                     { id: 'payroll', icon: '💰', label: 'Payroll' },
                     { id: 'settings', icon: '⚙️', label: 'Settings' },
@@ -611,10 +605,7 @@ function MainApp({ session }) {
                         border: `1px solid ${isOn ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
                         transition: 'all 0.2s'
                       }}>
-                        <span style={{
-                          fontSize: '13px',
-                          color: isOn ? 'var(--text-primary)' : 'var(--text-muted)'
-                        }}>
+                        <span style={{ fontSize: '13px', color: isOn ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                           {mod.icon} {mod.label}
                         </span>
                         <div style={{
@@ -635,7 +626,7 @@ function MainApp({ session }) {
                 </div>
               </div>
 
-              {/* ===== PARTNER & EMPLOYEE ===== */}
+              {/* Partner & Employee */}
               <div style={{
                 color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
@@ -662,7 +653,7 @@ function MainApp({ session }) {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
                     gap: '8px'
                   }}>
-                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'employees', 'payroll', 'settings'].map(moduleId => (
+                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'timetracking', 'employees', 'payroll', 'settings'].map(moduleId => (
                       <ModuleToggle
                         key={`${moduleId}-${role}`}
                         moduleId={moduleId}
@@ -704,7 +695,8 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
     dashboard: '🏠 Dashboard', messages: '💬 Messages',
     projects: '📁 Projects', tasks: '✅ Tasks',
     attendance: '📅 Attendance', employees: '👥 People',
-    payroll: '💰 Payroll', files: '📁 Files', settings: '⚙️ Settings',
+    payroll: '💰 Payroll', files: '📁 Files',
+    settings: '⚙️ Settings', timetracking: '⏱️ Time Logs',
   }
 
   return (
