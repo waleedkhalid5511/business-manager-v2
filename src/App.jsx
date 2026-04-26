@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
+import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import Attendance from './pages/Attendance'
 import Tasks from './pages/Tasks'
@@ -160,6 +161,7 @@ function DashboardPage({ session }) {
     { id: 'tasks', icon: '✅', label: 'Tasks' },
     { id: 'payroll', icon: '💰', label: 'Payroll' },
     { id: 'messages', icon: '💬', label: 'Messages' },
+    { id: 'settings', icon: '⚙️', label: 'Settings' },
   ]
 
   if (loading) return <div style={{ color: 'white', padding: '20px' }}>Loading...</div>
@@ -188,7 +190,7 @@ function DashboardPage({ session }) {
           </span>
         </div>
 
-        <nav style={{ flex: 1, padding: '12px 8px' }}>
+        <nav style={{ flex: 1, padding: '12px 8px', overflowY: 'auto' }}>
           {menuItems.map(item => (
             <button
               key={item.id}
@@ -257,49 +259,23 @@ function DashboardPage({ session }) {
 
         <div style={{ padding: '24px' }}>
           {activeTab === 'dashboard' && (
-            <div>
-              {/* Welcome */}
-              <div style={{
-                background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
-                borderRadius: '16px', padding: '28px',
-                marginBottom: '24px', border: '1px solid #334155'
-              }}>
-                <h2 style={{ color: 'white', margin: '0 0 8px', fontSize: '22px' }}>
-                  👋 Welcome, {profile?.full_name}!
-                </h2>
-                <p style={{ color: '#94a3b8', margin: 0 }}>
-                  Aapka Business Manager ready hai. Left menu se koi bhi page kholo!
-                </p>
-              </div>
-
-              {/* Quick Actions */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                gap: '14px'
-              }}>
-                {menuItems.slice(1).map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    style={{
-                      background: '#1e293b', border: '1px solid #334155',
-                      borderRadius: '12px', padding: '20px',
-                      color: 'white', cursor: 'pointer', textAlign: 'center'
-                    }}
-                  >
-                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{item.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Dashboard profile={profile} setActiveTab={setActiveTab} />
           )}
           {activeTab === 'employees' && <Employees profile={profile} />}
           {activeTab === 'attendance' && <Attendance profile={profile} />}
           {activeTab === 'tasks' && <Tasks profile={profile} />}
           {activeTab === 'payroll' && <Payroll profile={profile} />}
           {activeTab === 'messages' && <Messages profile={profile} />}
+          {activeTab === 'settings' && (
+            <div style={{
+              background: '#1e293b', borderRadius: '12px',
+              padding: '40px', textAlign: 'center',
+              color: '#94a3b8', border: '1px solid #334155'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚙️</div>
+              <p>Settings page — coming soon!</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
