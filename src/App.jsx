@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
+import { usePermissions } from './hooks/usePermissions'
+import { useNotifications } from './hooks/useNotifications'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import Attendance from './pages/Attendance'
@@ -68,8 +70,7 @@ function LoginPage() {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'var(--bg-primary)',
+      minHeight: '100vh', background: 'var(--bg-primary)',
       display: 'flex', fontFamily: 'inherit',
       position: 'relative', overflow: 'hidden'
     }}>
@@ -86,12 +87,11 @@ function LoginPage() {
         pointerEvents: 'none'
       }} />
 
-      {/* Left Panel */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         justifyContent: 'center', padding: '60px',
         borderRight: '1px solid var(--border)'
-      }} className="hide-mobile">
+      }}>
         <div style={{ maxWidth: '480px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' }}>
             <div style={{
@@ -106,7 +106,6 @@ function LoginPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Enterprise Edition</div>
             </div>
           </div>
-
           <h1 style={{
             color: 'var(--text-primary)', fontSize: '36px',
             fontWeight: '800', margin: '0 0 16px', lineHeight: '1.2'
@@ -115,9 +114,8 @@ function LoginPage() {
             <span className="gradient-text">smarter & faster</span>
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: '1.7', margin: '0 0 40px' }}>
-            Complete business management with employees, tasks, attendance, payroll, and real-time communication.
+            Complete business management — employees, tasks, attendance, payroll, and real-time communication.
           </p>
-
           {[
             { icon: '👥', text: 'Employee & Role Management' },
             { icon: '📁', text: 'Projects & Kanban Boards' },
@@ -137,7 +135,6 @@ function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
       <div style={{
         width: '480px', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '40px'
@@ -149,7 +146,6 @@ function LoginPage() {
           <p style={{ color: 'var(--text-muted)', margin: '0 0 28px', fontSize: '14px' }}>
             Sign in to your account to continue
           </p>
-
           {error && (
             <div style={{
               background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
@@ -159,7 +155,6 @@ function LoginPage() {
               <span>⚠️</span> {error}
             </div>
           )}
-
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
               <label className="input-label">Email Address</label>
@@ -180,7 +175,6 @@ function LoginPage() {
               {loading ? '⟳ Signing in...' : 'Sign In →'}
             </button>
           </form>
-
           <p style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', marginTop: '24px' }}>
             Don't have an account? Contact your administrator
           </p>
@@ -195,9 +189,25 @@ function MainApp({ session }) {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showNotifications, setShowNotifications] = useState(false)
+  const [showNotifPanel, setShowNotifPanel] = useState(false)
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [adminKeySequence, setAdminKeySequence] = useState([])
+
+  const { canAccess, isInSidebar, presentationMode, togglePresentationMode, toggleModule, permissions } = usePermissions(profile)
+  const { notifications, unreadCount, markAsRead, markAllRead, notificationIcon } = useNotifications(profile)
 
   useEffect(() => { getProfile() }, [])
+
+  // 🔐 Secret Admin Panel — Konami style: Ctrl+Shift+A
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'A' && profile?.role === 'admin') {
+        setShowAdminPanel(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [profile])
 
   const getProfile = async () => {
     const { data } = await supabase
@@ -209,7 +219,7 @@ function MainApp({ session }) {
 
   const handleLogout = async () => { await supabase.auth.signOut() }
 
-  const navSections = [
+  const ALL_NAV_SECTIONS = [
     {
       title: 'Main',
       items: [
@@ -240,13 +250,18 @@ function MainApp({ session }) {
     }
   ]
 
-  const allItems = navSections.flatMap(s => s.items)
+  // Filter nav based on permissions — stealth system
+  const filteredNavSections = ALL_NAV_SECTIONS.map(section => ({
+    ...section,
+    items: section.items.filter(item => isInSidebar(item.id))
+  })).filter(section => section.items.length > 0)
+
+  const allItems = ALL_NAV_SECTIONS.flatMap(s => s.items)
+  const currentItem = allItems.find(i => i.id === activeTab)
 
   const roleColor = {
-    admin: '#ef4444',
-    manager: '#f59e0b',
-    employee: '#3b82f6',
-    partner: '#8b5cf6'
+    admin: '#ef4444', manager: '#f59e0b',
+    employee: '#3b82f6', partner: '#8b5cf6', client: '#10b981'
   }
 
   if (loading) return (
@@ -255,18 +270,44 @@ function MainApp({ session }) {
     </div>
   )
 
-  const currentItem = allItems.find(i => i.id === activeTab)
-
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
-      {/* Sidebar */}
+
+      {/* ===== PRESENTATION MODE BANNER ===== */}
+      {presentationMode && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          background: 'linear-gradient(90deg, #10b981, #059669)',
+          padding: '8px 20px', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>🎭</span>
+            <span style={{ color: 'white', fontWeight: '700', fontSize: '13px' }}>
+              PRESENTATION MODE ACTIVE — Client-safe view
+            </span>
+          </div>
+          {profile?.role === 'admin' && (
+            <button onClick={() => togglePresentationMode(false)} style={{
+              background: 'rgba(255,255,255,0.2)', border: 'none',
+              borderRadius: '6px', padding: '4px 12px',
+              color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+            }}>
+              Exit Presentation Mode
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ===== SIDEBAR ===== */}
       <div style={{
         width: sidebarCollapsed ? '64px' : '220px',
         background: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
         transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
-        flexShrink: 0, zIndex: 100, overflow: 'hidden'
+        flexShrink: 0, zIndex: 100, overflow: 'hidden',
+        marginTop: presentationMode ? '36px' : 0
       }}>
         {/* Logo */}
         <div style={{
@@ -285,14 +326,16 @@ function MainApp({ session }) {
               <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>
                 Business Manager
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>Enterprise</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>
+                {presentationMode ? '🎭 Presentation' : 'Enterprise'}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Nav */}
+        {/* Nav — Only shows permitted modules */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 8px' }}>
-          {navSections.map(section => (
+          {filteredNavSections.map(section => (
             <div key={section.title} style={{ marginBottom: '8px' }}>
               {!sidebarCollapsed && (
                 <div style={{
@@ -312,7 +355,6 @@ function MainApp({ session }) {
                     justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
                     padding: sidebarCollapsed ? '10px' : '10px 12px'
                   }}
-                  data-tooltip={sidebarCollapsed ? item.label : undefined}
                 >
                   <span style={{
                     fontSize: '16px', flexShrink: 0,
@@ -320,9 +362,7 @@ function MainApp({ session }) {
                   }}>
                     {item.icon}
                   </span>
-                  {!sidebarCollapsed && (
-                    <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>
-                  )}
+                  {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
                 </button>
               ))}
             </div>
@@ -372,8 +412,12 @@ function MainApp({ session }) {
         </div>
       </div>
 
-      {/* Main Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      {/* ===== MAIN AREA ===== */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        overflow: 'hidden', minWidth: 0,
+        marginTop: presentationMode ? '36px' : 0
+      }}>
         {/* Top Bar */}
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
@@ -390,21 +434,144 @@ function MainApp({ session }) {
                 {currentItem?.label}
               </span>
             </div>
+
+            {/* Presentation Mode Toggle — Admin Only */}
+            {profile?.role === 'admin' && !presentationMode && (
+              <button
+                onClick={() => togglePresentationMode(true)}
+                style={{
+                  background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
+                  borderRadius: '6px', padding: '4px 12px',
+                  color: '#10b981', cursor: 'pointer', fontSize: '12px',
+                  fontWeight: '600', marginLeft: '8px'
+                }}
+              >
+                🎭 Presentation Mode
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
-            <button className="btn-icon" style={{ position: 'relative' }}
-              onClick={() => setShowNotifications(!showNotifications)}>
-              🔔
-              <span style={{
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: 'var(--accent-red)', border: '2px solid var(--bg-secondary)'
-              }} />
-            </button>
+
+            {/* Notification Bell */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn-icon"
+                onClick={() => { setShowNotifPanel(!showNotifPanel); setShowAdminPanel(false) }}
+                style={{ position: 'relative' }}
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: '0px', right: '0px',
+                    background: 'var(--accent-red)', color: 'white',
+                    borderRadius: '50%', width: '16px', height: '16px',
+                    fontSize: '9px', fontWeight: '700',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '2px solid var(--bg-secondary)'
+                  }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications Panel */}
+              {showNotifPanel && (
+                <div style={{
+                  position: 'absolute', top: '40px', right: 0,
+                  width: '360px', background: 'var(--bg-card)',
+                  border: '1px solid var(--border)', borderRadius: '14px',
+                  boxShadow: 'var(--shadow-lg)', zIndex: 1000,
+                  overflow: 'hidden', animation: 'bounceIn 0.2s ease'
+                }}>
+                  <div style={{
+                    padding: '14px 16px', borderBottom: '1px solid var(--border)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
+                        Notifications
+                      </span>
+                      {unreadCount > 0 && (
+                        <span style={{
+                          background: 'var(--accent-red)', color: 'white',
+                          borderRadius: '20px', padding: '1px 7px',
+                          fontSize: '11px', fontWeight: '700'
+                        }}>
+                          {unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={markAllRead} style={{
+                      background: 'transparent', border: 'none',
+                      color: 'var(--accent-blue)', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: '600'
+                    }}>
+                      Mark all read
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {notifications.length === 0 ? (
+                      <div className="empty-state" style={{ padding: '40px' }}>
+                        <div className="empty-icon">🔔</div>
+                        <div className="empty-desc">No notifications yet</div>
+                      </div>
+                    ) : (
+                      notifications.map(notif => (
+                        <div
+                          key={notif.id}
+                          onClick={() => markAsRead(notif.id)}
+                          className={`notification ${!notif.is_read ? 'unread' : ''}`}
+                          style={{ margin: '6px 8px', borderRadius: '10px' }}
+                        >
+                          <div style={{
+                            width: '36px', height: '36px', borderRadius: '10px',
+                            background: notif.is_read ? 'var(--bg-hover)' : 'rgba(59,130,246,0.15)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '18px', flexShrink: 0
+                          }}>
+                            {notificationIcon(notif.type)}
+                          </div>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <div style={{
+                              color: 'var(--text-primary)', fontSize: '13px',
+                              fontWeight: notif.is_read ? '400' : '600',
+                              marginBottom: '2px'
+                            }}>
+                              {notif.title}
+                            </div>
+                            {notif.body && (
+                              <div style={{
+                                color: 'var(--text-muted)', fontSize: '12px',
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                              }}>
+                                {notif.body}
+                              </div>
+                            )}
+                            <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>
+                              {new Date(notif.created_at).toLocaleTimeString('en-US', {
+                                hour: '2-digit', minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                          {!notif.is_read && (
+                            <div style={{
+                              width: '8px', height: '8px', borderRadius: '50%',
+                              background: 'var(--accent-blue)', flexShrink: 0
+                            }} />
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="avatar avatar-sm" style={{ cursor: 'pointer' }}
               onClick={() => setActiveTab('settings')}>
               {profile?.full_name?.charAt(0).toUpperCase()}
@@ -414,15 +581,215 @@ function MainApp({ session }) {
 
         {/* Page Content */}
         <div style={{ flex: 1, overflow: 'auto', padding: '24px' }} className="fade-in">
-          {activeTab === 'dashboard' && <Dashboard profile={profile} setActiveTab={setActiveTab} />}
-          {activeTab === 'employees' && <Employees profile={profile} />}
-          {activeTab === 'attendance' && <Attendance profile={profile} />}
-          {activeTab === 'tasks' && <Tasks profile={profile} />}
-          {activeTab === 'projects' && <Projects profile={profile} />}
-          {activeTab === 'payroll' && <Payroll profile={profile} />}
-          {activeTab === 'messages' && <Messages profile={profile} />}
-          {activeTab === 'settings' && <Settings profile={profile} />}
+          {/* Block access to hidden modules */}
+          {!canAccess(activeTab) ? (
+            <div className="empty-state" style={{ height: '100%' }}>
+              <div className="empty-icon">🔒</div>
+              <div className="empty-title">Access Restricted</div>
+              <div className="empty-desc">You don't have permission to view this module</div>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'dashboard' && <Dashboard profile={profile} setActiveTab={setActiveTab} />}
+              {activeTab === 'employees' && <Employees profile={profile} />}
+              {activeTab === 'attendance' && <Attendance profile={profile} />}
+              {activeTab === 'tasks' && <Tasks profile={profile} />}
+              {activeTab === 'projects' && <Projects profile={profile} />}
+              {activeTab === 'payroll' && <Payroll profile={profile} />}
+              {activeTab === 'messages' && <Messages profile={profile} />}
+              {activeTab === 'settings' && (
+                <Settings
+                  profile={profile}
+                  presentationMode={presentationMode}
+                  togglePresentationMode={togglePresentationMode}
+                  toggleModule={toggleModule}
+                  permissions={permissions}
+                />
+              )}
+            </>
+          )}
         </div>
+      </div>
+
+      {/* ===== SECRET ADMIN PANEL ===== */}
+      {showAdminPanel && profile?.role === 'admin' && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          zIndex: 9999, display: 'flex', justifyContent: 'center',
+          alignItems: 'center', padding: '20px',
+          backdropFilter: 'blur(8px)'
+        }} onClick={() => setShowAdminPanel(false)}>
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: '20px',
+            width: '100%', maxWidth: '700px', maxHeight: '85vh',
+            overflowY: 'auto', border: '1px solid var(--border)',
+            animation: 'bounceIn 0.3s ease'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              padding: '20px 24px', borderBottom: '1px solid var(--border)',
+              background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
+              borderRadius: '20px 20px 0 0',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>🔐</span>
+                  <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '700' }}>
+                    Secret Admin Panel
+                  </h2>
+                </div>
+                <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: '12px' }}>
+                  Ctrl+Shift+A to toggle • Not visible to other users
+                </p>
+              </div>
+              <button onClick={() => setShowAdminPanel(false)} className="btn-icon" style={{ color: 'white' }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '24px' }}>
+              {/* Presentation Mode Control */}
+              <div style={{
+                background: 'var(--bg-hover)', borderRadius: '12px',
+                padding: '16px', marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px' }}>
+                      🎭 Presentation Mode
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                      Show client-safe view — hides sensitive data
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => togglePresentationMode(!presentationMode)}
+                    style={{
+                      width: '52px', height: '28px', borderRadius: '14px',
+                      background: presentationMode ? '#10b981' : 'var(--border)',
+                      cursor: 'pointer', position: 'relative',
+                      transition: 'background 0.2s', flexShrink: 0
+                    }}
+                  >
+                    <div style={{
+                      width: '22px', height: '22px', borderRadius: '50%',
+                      background: 'white', position: 'absolute', top: '3px',
+                      left: presentationMode ? '27px' : '3px',
+                      transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)'
+                    }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Module Visibility Control */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{
+                  color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
+                  textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
+                }}>
+                  Module Visibility Control
+                </div>
+
+                {['partner', 'employee', 'client'].map(role => (
+                  <div key={role} style={{
+                    background: 'var(--bg-hover)', borderRadius: '10px',
+                    padding: '14px', marginBottom: '10px'
+                  }}>
+                    <div style={{
+                      color: 'var(--text-primary)', fontWeight: '600',
+                      fontSize: '13px', marginBottom: '12px',
+                      textTransform: 'capitalize',
+                      display: 'flex', alignItems: 'center', gap: '8px'
+                    }}>
+                      <span style={{
+                        background: `${roleColor[role]}22`, color: roleColor[role],
+                        padding: '2px 8px', borderRadius: '20px', fontSize: '11px'
+                      }}>
+                        {role}
+                      </span>
+                      view
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
+                      {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'employees', 'payroll', 'analytics', 'files', 'settings'].map(moduleId => {
+                        const currentPerm = permissions[`${moduleId}_${role}`]
+                        return (
+                          <ModuleToggle
+                            key={moduleId}
+                            moduleId={moduleId}
+                            role={role}
+                            onToggle={toggleModule}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Quick Actions */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px'
+              }}>
+                {[
+                  { label: 'View Payroll', icon: '💰', action: () => { setActiveTab('payroll'); setShowAdminPanel(false) } },
+                  { label: 'Audit Logs', icon: '📋', action: () => { setActiveTab('settings'); setShowAdminPanel(false) } },
+                  { label: 'All Employees', icon: '👥', action: () => { setActiveTab('employees'); setShowAdminPanel(false) } },
+                ].map(item => (
+                  <button key={item.label} onClick={item.action} style={{
+                    background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                    borderRadius: '10px', padding: '14px', color: 'var(--text-primary)',
+                    cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                    textAlign: 'center', transition: 'all 0.2s'
+                  }}>
+                    <div style={{ fontSize: '24px', marginBottom: '6px' }}>{item.icon}</div>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Click outside to close panels */}
+      {showNotifPanel && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+          onClick={() => setShowNotifPanel(false)} />
+      )}
+    </div>
+  )
+}
+
+// Module Toggle Component
+function ModuleToggle({ moduleId, role, onToggle }) {
+  const [enabled, setEnabled] = useState(true)
+
+  const handleToggle = async () => {
+    const newVal = !enabled
+    setEnabled(newVal)
+    await onToggle(moduleId, role, 'is_in_dom', newVal)
+    await onToggle(moduleId, role, 'is_in_sidebar', newVal)
+    await onToggle(moduleId, role, 'is_visible', newVal)
+  }
+
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      background: 'var(--bg-card)', borderRadius: '8px', padding: '8px 10px'
+    }}>
+      <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'capitalize' }}>
+        {moduleId}
+      </span>
+      <div onClick={handleToggle} style={{
+        width: '36px', height: '20px', borderRadius: '10px',
+        background: enabled ? 'var(--accent-blue)' : 'var(--border)',
+        cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0
+      }}>
+        <div style={{
+          width: '14px', height: '14px', borderRadius: '50%',
+          background: 'white', position: 'absolute', top: '3px',
+          left: enabled ? '19px' : '3px', transition: 'left 0.2s'
+        }} />
       </div>
     </div>
   )
