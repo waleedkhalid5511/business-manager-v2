@@ -44,7 +44,9 @@ export default function Tasks({ profile }) {
 
   useEffect(() => {
     let interval
-    if (activeTimer) interval = setInterval(() => setTimerSeconds(s => s + 1), 1000)
+    if (activeTimer) {
+      interval = setInterval(() => setTimerSeconds(s => s + 1), 1000)
+    }
     return () => clearInterval(interval)
   }, [activeTimer])
 
@@ -55,24 +57,43 @@ export default function Tasks({ profile }) {
     }
   }, [showDetail])
 
+  // Auto clear message
+  useEffect(() => {
+    if (message) {
+      const t = setTimeout(() => setMessage(''), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [message])
+
   const fetchTasks = async () => {
     setLoading(true)
-    let query = supabase
-      .from('tasks')
-      .select('*, assigned_to_profile:profiles!tasks_assigned_to_fkey(full_name, avatar_url), assigned_by_profile:profiles!tasks_assigned_by_fkey(full_name)')
-      .order('created_at', { ascending: false })
+    try {
+      let query = supabase
+        .from('tasks')
+        .select(`
+          *,
+          assigned_to_profile:profiles!tasks_assigned_to_fkey(id, full_name, avatar_url),
+          assigned_by_profile:profiles!tasks_assigned_by_fkey(id, full_name)
+        `)
+        .order('created_at', { ascending: false })
 
-    if (filterPriority !== 'all') query = query.eq('priority', filterPriority)
-    if (filterAssignee !== 'all') query = query.eq('assigned_to', filterAssignee)
-    if (!isAdmin && !isManager) query = query.eq('assigned_to', profile.id)
+      if (filterPriority !== 'all') query = query.eq('priority', filterPriority)
+      if (filterAssignee !== 'all') query = query.eq('assigned_to', filterAssignee)
+      if (!isAdmin && !isManager) query = query.eq('assigned_to', profile.id)
 
-    const { data } = await query
-    setTasks(data || [])
-    setLoading(false)
+      const { data, error } = await query
+      if (error) throw error
+      setTasks(data || [])
+    } catch (e) {
+      console.error('fetchTasks error:', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const fetchEmployees = async () => {
-    const { data } = await supabase.from('profiles').select('id, full_name').eq('is_active', true)
+    const { data } = await supabase
+      .from('profiles').select('id, full_name').eq('is_active', true)
     setEmployees(data || [])
   }
 
@@ -86,66 +107,119 @@ export default function Tasks({ profile }) {
   }
 
   const fetchTimeLogs = async (taskId) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('task_time_logs')
       .select('*, profiles(full_name)')
       .eq('task_id', taskId)
       .order('created_at', { ascending: false })
+    if (error) console.error('fetchTimeLogs error:', error)
     setTimeLogs(data || [])
   }
 
   const handleSubmit = async () => {
     if (!form.title) { setMessage('❌ Task title is required!'); return }
     const taskData = {
-      title: form.title, description: form.description,
+      title: form.title,
+      description: form.description,
       assigned_to: form.assigned_to || null,
-      assigned_by: profile.id, project: form.project,
-      priority: form.priority, status: form.status,
+      assigned_by: profile.id,
+      project: form.project,
+      priority: form.priority,
+      status: form.status,
       due_date: form.due_date || null,
       estimated_hours: parseFloat(form.estimated_hours) || null
     }
-    if (editTask) {
-      const { error } = await supabase.from('tasks').update(taskData).eq('id', editTask.id)
-      if (error) setMessage('❌ ' + error.message)
-      else { setMessage('✅ Task updated!'); fetchTasks(); closeModal() }
-    } else {
-      const { error } = await supabase.from('tasks').insert(taskData)
-      if (error) setMessage('❌ ' + error.message)
-      else { setMessage('✅ Task created!'); fetchTasks(); closeModal() }
+    try {
+      if (editTask) {
+        const { error } = await supabase.from('tasks').update(taskData).eq('id', editTask.id)
+        if (error) throw error
+        setMessage('✅ Task updated!')
+      } else {
+        const { error } = await supabase.from('tasks').insert(taskData)
+        if (error) throw error
+        setMessage('✅ Task created!')
+      }
+      fetchTasks()
+      closeModal()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
     }
   }
 
   const updateStatus = async (taskId, newStatus) => {
-    await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId)
+    const { error } = await supabase
+      .from('tasks').update({ status: newStatus }).eq('id', taskId)
+    if (error) { setMessage('❌ ' + error.message); return }
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t))
     if (showDetail?.id === taskId) setShowDetail(prev => ({ ...prev, status: newStatus }))
   }
 
   const startTimer = async (task) => {
-    const { data } = await supabase
-      .from('task_time_logs')
-      .insert({ task_id: task.id, employee_id: profile.id, start_time: new Date().toISOString() })
-      .select().single()
-    setActiveTimer({ task, logId: data?.id })
-    setTimerSeconds(0)
+    try {
+      // Stop any existing timer first
+      if (activeTimer) await stopTimer()
+
+      const { data, error } = await supabase
+        .from('task_time_logs')
+        .insert({
+          task_id: task.id,
+          employee_id: profile.id,
+          start_time: new Date().toISOString(),
+          duration_minutes: 0
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('startTimer error:', error)
+        setMessage('❌ Timer error: ' + error.message)
+        return
+      }
+
+      setActiveTimer({ task, logId: data.id })
+      setTimerSeconds(0)
+      setMessage('▶ Timer started: ' + task.title)
+    } catch (e) {
+      console.error('startTimer exception:', e)
+      setMessage('❌ Timer failed: ' + e.message)
+    }
   }
 
   const stopTimer = async () => {
     if (!activeTimer) return
-    const duration = Math.floor(timerSeconds / 60)
-    await supabase.from('task_time_logs').update({
-      end_time: new Date().toISOString(), duration_minutes: duration
-    }).eq('id', activeTimer.logId)
-    setMessage(`✅ Timer stopped! ${duration} minutes logged.`)
-    setActiveTimer(null)
-    setTimerSeconds(0)
-    if (showDetail) fetchTimeLogs(showDetail.id)
+    try {
+      const duration = Math.max(1, Math.floor(timerSeconds / 60))
+      const { error } = await supabase
+        .from('task_time_logs')
+        .update({
+          end_time: new Date().toISOString(),
+          duration_minutes: duration
+        })
+        .eq('id', activeTimer.logId)
+
+      if (error) {
+        console.error('stopTimer error:', error)
+        setMessage('❌ Stop error: ' + error.message)
+        return
+      }
+
+      setMessage(`⏹ Stopped! ${duration} min logged for: ${activeTimer.task.title}`)
+      const stoppedTaskId = activeTimer.task.id
+      setActiveTimer(null)
+      setTimerSeconds(0)
+      fetchTasks()
+      if (showDetail?.id === stoppedTaskId) fetchTimeLogs(stoppedTaskId)
+    } catch (e) {
+      setMessage('❌ Stop failed: ' + e.message)
+    }
   }
 
   const addComment = async (taskId) => {
     if (!newComment.trim()) return
     await supabase.from('messages').insert({
-      channel_id: taskId, sender_id: profile.id, content: newComment.trim()
+      channel_id: taskId,
+      sender_id: profile.id,
+      content: newComment.trim()
     })
     setNewComment('')
     fetchComments(taskId)
@@ -181,8 +255,13 @@ export default function Tasks({ profile }) {
   }
 
   const closeModal = () => {
-    setShowModal(false); setEditTask(null)
-    setForm({ title: '', description: '', assigned_to: '', project: '', priority: 'medium', status: 'todo', due_date: '', estimated_hours: '' })
+    setShowModal(false)
+    setEditTask(null)
+    setForm({
+      title: '', description: '', assigned_to: '',
+      project: '', priority: 'medium', status: 'todo',
+      due_date: '', estimated_hours: ''
+    })
     setMessage('')
   }
 
@@ -190,7 +269,7 @@ export default function Tasks({ profile }) {
     const h = Math.floor(s / 3600)
     const m = Math.floor((s % 3600) / 60)
     const sec = s % 60
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   }
 
   const formatDuration = (m) => {
@@ -202,22 +281,28 @@ export default function Tasks({ profile }) {
   const getTotalTime = (logs) => logs.reduce((sum, l) => sum + (l.duration_minutes || 0), 0)
 
   const priorityConfig = {
-    urgent: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: '🔴 Urgent' },
-    high: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: '🟡 High' },
-    medium: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: '🔵 Medium' },
-    low: { color: '#10b981', bg: 'rgba(16,185,129,0.1)', label: '🟢 Low' },
+    urgent: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Urgent' },
+    high: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'High' },
+    medium: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: 'Medium' },
+    low: { color: '#10b981', bg: 'rgba(16,185,129,0.1)', label: 'Low' },
   }
 
-  const isOverdue = (task) => task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
+  const isOverdue = (task) =>
+    task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
 
   const filtered = tasks.filter(task => {
-    const matchSearch = !search ||
-      task.title?.toLowerCase().includes(search.toLowerCase()) ||
+    if (!search) return true
+    return task.title?.toLowerCase().includes(search.toLowerCase()) ||
       task.project?.toLowerCase().includes(search.toLowerCase())
-    return matchSearch
   })
 
   const getColumnTasks = (columnId) => filtered.filter(t => t.status === columnId)
+
+  // Check if current user can start timer for a task
+  const canStartTimer = (task) => {
+    if (isAdmin || isManager) return task.status === 'in_progress'
+    return task.assigned_to === profile?.id && task.status === 'in_progress'
+  }
 
   return (
     <div className="fade-in">
@@ -227,16 +312,17 @@ export default function Tasks({ profile }) {
           background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.15))',
           borderRadius: '12px', padding: '14px 20px', marginBottom: '20px',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          border: '1px solid rgba(59,130,246,0.3)',
-          animation: 'glow 2s infinite'
+          border: '1px solid rgba(59,130,246,0.3)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
-              width: '8px', height: '8px', borderRadius: '50%',
+              width: '10px', height: '10px', borderRadius: '50%',
               background: '#10b981', animation: 'pulse 1s infinite'
             }} />
             <div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>TIMER RUNNING</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Timer Running
+              </div>
               <div style={{ color: 'white', fontWeight: '600', fontSize: '14px' }}>
                 {activeTimer.task.title}
               </div>
@@ -244,7 +330,7 @@ export default function Tasks({ profile }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{
-              color: '#3b82f6', fontSize: '24px', fontWeight: '700',
+              color: '#3b82f6', fontSize: '26px', fontWeight: '700',
               fontFamily: 'monospace', letterSpacing: '0.05em'
             }}>
               {formatTimer(timerSeconds)}
@@ -277,8 +363,7 @@ export default function Tasks({ profile }) {
           {/* View Toggle */}
           <div style={{
             display: 'flex', background: 'var(--bg-card)',
-            border: '1px solid var(--border)', borderRadius: '8px',
-            overflow: 'hidden'
+            border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden'
           }}>
             {[
               { id: 'kanban', icon: '⊞', label: 'Board' },
@@ -295,7 +380,6 @@ export default function Tasks({ profile }) {
               </button>
             ))}
           </div>
-
           {(isAdmin || isManager) && (
             <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
               + New Task
@@ -305,10 +389,7 @@ export default function Tasks({ profile }) {
       </div>
 
       {/* Filters */}
-      <div style={{
-        display: 'flex', gap: '10px', marginBottom: '20px',
-        flexWrap: 'wrap', alignItems: 'center'
-      }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <input
           type="text" placeholder="🔍 Search tasks..."
           value={search} onChange={(e) => setSearch(e.target.value)}
@@ -346,6 +427,28 @@ export default function Tasks({ profile }) {
         )}
       </div>
 
+      {/* Stats */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+        gap: '12px', marginBottom: '20px'
+      }}>
+        {[
+          { label: 'Todo', value: tasks.filter(t => t.status === 'todo').length, color: '#94a3b8' },
+          { label: 'In Progress', value: tasks.filter(t => t.status === 'in_progress').length, color: '#3b82f6' },
+          { label: 'Review', value: tasks.filter(t => t.status === 'review').length, color: '#f59e0b' },
+          { label: 'Done', value: tasks.filter(t => t.status === 'done').length, color: '#10b981' },
+          { label: 'Overdue', value: tasks.filter(t => isOverdue(t)).length, color: '#ef4444' },
+        ].map(stat => (
+          <div key={stat.label} style={{
+            background: 'var(--bg-card)', borderRadius: '10px', padding: '14px',
+            textAlign: 'center', border: `1px solid ${stat.color}33`
+          }}>
+            <div style={{ color: stat.color, fontSize: '22px', fontWeight: '700' }}>{stat.value}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Message */}
       {message && (
         <div style={{
@@ -357,19 +460,16 @@ export default function Tasks({ profile }) {
         }}>{message}</div>
       )}
 
+      {/* Loading */}
       {loading ? (
         <div style={{ display: 'flex', gap: '16px' }}>
           {COLUMNS.map(col => (
-            <div key={col.id} className="skeleton kanban-column" style={{ height: '400px' }} />
+            <div key={col.id} className="skeleton" style={{ minWidth: '280px', height: '400px', borderRadius: '12px' }} />
           ))}
         </div>
       ) : view === 'kanban' ? (
-        /* ===== KANBAN VIEW ===== */
-        <div style={{
-          display: 'flex', gap: '16px',
-          overflowX: 'auto', paddingBottom: '16px',
-          minHeight: '500px'
-        }}>
+        /* ===== KANBAN ===== */
+        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '16px', minHeight: '500px' }}>
           {COLUMNS.map(col => {
             const colTasks = getColumnTasks(col.id)
             return (
@@ -377,11 +477,8 @@ export default function Tasks({ profile }) {
                 key={col.id}
                 className="kanban-column"
                 style={{
-                  border: dragOver === col.id
-                    ? `2px dashed ${col.color}`
-                    : '1px solid var(--border)',
-                  background: dragOver === col.id
-                    ? `${col.color}08` : 'var(--bg-card)'
+                  border: dragOver === col.id ? `2px dashed ${col.color}` : '1px solid var(--border)',
+                  background: dragOver === col.id ? `${col.color}08` : 'var(--bg-card)'
                 }}
                 onDragOver={(e) => { e.preventDefault(); setDragOver(col.id) }}
                 onDragLeave={() => setDragOver(null)}
@@ -390,14 +487,8 @@ export default function Tasks({ profile }) {
                 {/* Column Header */}
                 <div className="kanban-column-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '10px', height: '10px', borderRadius: '50%',
-                      background: col.color
-                    }} />
-                    <span style={{
-                      color: 'var(--text-primary)', fontWeight: '600',
-                      fontSize: '13px'
-                    }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: col.color }} />
+                    <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '13px' }}>
                       {col.label}
                     </span>
                   </div>
@@ -416,7 +507,7 @@ export default function Tasks({ profile }) {
                     <div style={{
                       textAlign: 'center', padding: '24px 16px',
                       color: 'var(--text-muted)', fontSize: '12px',
-                      border: `2px dashed var(--border)`,
+                      border: '2px dashed var(--border)',
                       borderRadius: '8px', margin: '4px'
                     }}>
                       Drop tasks here
@@ -429,15 +520,10 @@ export default function Tasks({ profile }) {
                         draggable
                         onDragStart={(e) => handleDragStart(e, task)}
                         onClick={() => setShowDetail(task)}
-                        style={{
-                          borderTop: `3px solid ${priorityConfig[task.priority]?.color || '#334155'}`
-                        }}
+                        style={{ borderTop: `3px solid ${priorityConfig[task.priority]?.color || '#334155'}` }}
                       >
                         {/* Priority + Overdue */}
-                        <div style={{
-                          display: 'flex', justifyContent: 'space-between',
-                          alignItems: 'center', marginBottom: '8px'
-                        }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                           <span style={{
                             background: priorityConfig[task.priority]?.bg,
                             color: priorityConfig[task.priority]?.color,
@@ -448,20 +534,17 @@ export default function Tasks({ profile }) {
                           </span>
                           {isOverdue(task) && (
                             <span style={{
-                              background: 'rgba(239,68,68,0.15)',
-                              color: '#ef4444', padding: '2px 6px',
-                              borderRadius: '4px', fontSize: '10px', fontWeight: '700'
-                            }}>
-                              OVERDUE
-                            </span>
+                              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                              padding: '2px 6px', borderRadius: '4px',
+                              fontSize: '10px', fontWeight: '700'
+                            }}>OVERDUE</span>
                           )}
                         </div>
 
                         {/* Title */}
                         <div style={{
                           color: 'var(--text-primary)', fontSize: '13px',
-                          fontWeight: '600', marginBottom: '6px',
-                          lineHeight: '1.4'
+                          fontWeight: '600', marginBottom: '6px', lineHeight: '1.4'
                         }}>
                           {task.title}
                         </div>
@@ -491,11 +574,7 @@ export default function Tasks({ profile }) {
                         )}
 
                         {/* Footer */}
-                        <div style={{
-                          display: 'flex', justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          {/* Assignee */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                           {task.assigned_to_profile ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <div className="avatar" style={{
@@ -509,14 +588,8 @@ export default function Tasks({ profile }) {
                               </span>
                             </div>
                           ) : (
-                            <div style={{
-                              color: 'var(--text-muted)', fontSize: '11px'
-                            }}>
-                              Unassigned
-                            </div>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Unassigned</span>
                           )}
-
-                          {/* Due Date */}
                           {task.due_date && (
                             <div style={{
                               color: isOverdue(task) ? '#ef4444' : 'var(--text-muted)',
@@ -528,8 +601,8 @@ export default function Tasks({ profile }) {
                         </div>
 
                         {/* Timer Button */}
-                        {task.assigned_to === profile?.id && task.status === 'in_progress' && (
-                          <div style={{ marginTop: '8px' }} onClick={e => e.stopPropagation()}>
+                        {canStartTimer(task) && (
+                          <div onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => activeTimer?.task.id === task.id ? stopTimer() : startTimer(task)}
                               className="btn btn-sm"
@@ -538,7 +611,8 @@ export default function Tasks({ profile }) {
                                 background: activeTimer?.task.id === task.id
                                   ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
                                 color: activeTimer?.task.id === task.id ? '#ef4444' : '#10b981',
-                                border: `1px solid ${activeTimer?.task.id === task.id ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`
+                                border: `1px solid ${activeTimer?.task.id === task.id
+                                  ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`
                               }}
                             >
                               {activeTimer?.task.id === task.id
@@ -552,15 +626,19 @@ export default function Tasks({ profile }) {
                     ))
                   )}
 
-                  {/* Add Task Button */}
+                  {/* Add task button */}
                   {(isAdmin || isManager) && (
                     <button
-                      onClick={() => { setForm(f => ({ ...f, status: col.id })); setShowModal(true) }}
+                      onClick={() => {
+                        setForm(f => ({ ...f, status: col.id }))
+                        setShowModal(true)
+                      }}
                       style={{
-                        width: '100%', padding: '8px', background: 'transparent',
-                        border: `1px dashed var(--border)`, borderRadius: '8px',
-                        color: 'var(--text-muted)', cursor: 'pointer',
-                        fontSize: '12px', marginTop: '4px',
+                        width: '100%', padding: '8px',
+                        background: 'transparent',
+                        border: '1px dashed var(--border)',
+                        borderRadius: '8px', color: 'var(--text-muted)',
+                        cursor: 'pointer', fontSize: '12px', marginTop: '4px',
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={e => {
@@ -591,7 +669,7 @@ export default function Tasks({ profile }) {
                 <th>Priority</th>
                 <th>Status</th>
                 <th>Due Date</th>
-                <th>Actions</th>
+                <th>Timer</th>
               </tr>
             </thead>
             <tbody>
@@ -607,6 +685,13 @@ export default function Tasks({ profile }) {
                     <td>
                       <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '2px' }}>
                         {task.title}
+                        {isOverdue(task) && (
+                          <span style={{
+                            background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                            padding: '1px 6px', borderRadius: '4px',
+                            fontSize: '10px', fontWeight: '700', marginLeft: '6px'
+                          }}>OVERDUE</span>
+                        )}
                       </div>
                       {task.project && (
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>📁 {task.project}</div>
@@ -652,9 +737,17 @@ export default function Tasks({ profile }) {
                       }
                     </td>
                     <td onClick={e => e.stopPropagation()}>
-                      {(isAdmin || isManager) && (
-                        <button onClick={() => openEdit(task)} className="btn-icon" style={{ fontSize: '14px' }}>
-                          ✏️
+                      {canStartTimer(task) && (
+                        <button
+                          onClick={() => activeTimer?.task.id === task.id ? stopTimer() : startTimer(task)}
+                          className="btn btn-sm"
+                          style={{
+                            background: activeTimer?.task.id === task.id ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+                            color: activeTimer?.task.id === task.id ? '#ef4444' : '#10b981',
+                            border: `1px solid ${activeTimer?.task.id === task.id ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`
+                          }}
+                        >
+                          {activeTimer?.task.id === task.id ? `⏹ ${formatTimer(timerSeconds)}` : '▶ Start'}
                         </button>
                       )}
                     </td>
@@ -674,7 +767,7 @@ export default function Tasks({ profile }) {
             {/* Header */}
             <div style={{
               background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
-              padding: '24px'
+              padding: '24px', borderRadius: '20px 20px 0 0'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, marginRight: '16px' }}>
@@ -706,7 +799,7 @@ export default function Tasks({ profile }) {
                     </p>
                   )}
                 </div>
-                <button onClick={() => setShowDetail(null)} className="btn-icon">✕</button>
+                <button onClick={() => setShowDetail(null)} className="btn-icon" style={{ color: 'white' }}>✕</button>
               </div>
             </div>
 
@@ -724,9 +817,7 @@ export default function Tasks({ profile }) {
                   { label: 'Time Logged', value: formatDuration(getTotalTime(timeLogs)) },
                   { label: 'Created By', value: showDetail.assigned_by_profile?.full_name || '—' },
                 ].map(item => (
-                  <div key={item.label} style={{
-                    background: 'var(--bg-hover)', borderRadius: '8px', padding: '10px'
-                  }}>
+                  <div key={item.label} style={{ background: 'var(--bg-hover)', borderRadius: '8px', padding: '10px' }}>
                     <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       {item.label}
                     </div>
@@ -744,32 +835,33 @@ export default function Tasks({ profile }) {
                 </div>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {COLUMNS.map(col => (
-                    <button key={col.id} onClick={() => updateStatus(showDetail.id, col.id)}
-                      style={{
-                        padding: '6px 14px', borderRadius: '20px', border: 'none',
-                        background: showDetail.status === col.id ? col.color : `${col.color}15`,
-                        color: showDetail.status === col.id ? 'white' : col.color,
-                        cursor: 'pointer', fontSize: '12px', fontWeight: '600',
-                        transition: 'all 0.2s'
-                      }}>
+                    <button key={col.id} onClick={() => updateStatus(showDetail.id, col.id)} style={{
+                      padding: '6px 14px', borderRadius: '20px', border: 'none',
+                      background: showDetail.status === col.id ? col.color : `${col.color}15`,
+                      color: showDetail.status === col.id ? 'white' : col.color,
+                      cursor: 'pointer', fontSize: '12px', fontWeight: '600', transition: 'all 0.2s'
+                    }}>
                       {col.icon} {col.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Timer */}
-              {showDetail.assigned_to === profile?.id && showDetail.status === 'in_progress' && (
+              {/* Timer Section */}
+              {canStartTimer(showDetail) && (
                 <div style={{
-                  background: 'var(--bg-hover)', borderRadius: '10px', padding: '16px',
-                  marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                  background: 'var(--bg-hover)', borderRadius: '12px',
+                  padding: '16px', marginBottom: '20px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  border: activeTimer?.task.id === showDetail.id
+                    ? '1px solid rgba(59,130,246,0.4)' : '1px solid var(--border)'
                 }}>
                   <div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '4px' }}>
-                      TIME TRACKER
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      Time Tracker
                     </div>
                     <div style={{
-                      color: 'var(--accent-blue)', fontSize: '24px',
+                      color: 'var(--accent-blue)', fontSize: '26px',
                       fontWeight: '700', fontFamily: 'monospace'
                     }}>
                       {activeTimer?.task.id === showDetail.id ? formatTimer(timerSeconds) : '00:00:00'}
@@ -779,14 +871,15 @@ export default function Tasks({ profile }) {
                     onClick={() => activeTimer?.task.id === showDetail.id ? stopTimer() : startTimer(showDetail)}
                     className="btn btn-sm"
                     style={{
+                      padding: '10px 20px',
                       background: activeTimer?.task.id === showDetail.id
                         ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
                       color: activeTimer?.task.id === showDetail.id ? '#ef4444' : '#10b981',
-                      border: `1px solid ${activeTimer?.task.id === showDetail.id ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
-                      padding: '10px 20px'
+                      border: `1px solid ${activeTimer?.task.id === showDetail.id
+                        ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`
                     }}
                   >
-                    {activeTimer?.task.id === showDetail.id ? '⏹ Stop' : '▶ Start Timer'}
+                    {activeTimer?.task.id === showDetail.id ? '⏹ Stop Timer' : '▶ Start Timer'}
                   </button>
                 </div>
               )}
@@ -801,28 +894,32 @@ export default function Tasks({ profile }) {
                     Time Logs — Total: {formatDuration(getTotalTime(timeLogs))}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {timeLogs.slice(0, 5).map(log => (
+                    {timeLogs.map(log => (
                       <div key={log.id} style={{
                         background: 'var(--bg-hover)', borderRadius: '8px', padding: '10px',
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div className="avatar avatar-sm">{log.profiles?.full_name?.charAt(0).toUpperCase()}</div>
+                          <div className="avatar avatar-sm">
+                            {log.profiles?.full_name?.charAt(0).toUpperCase()}
+                          </div>
                           <div>
                             <div style={{ color: 'var(--text-primary)', fontSize: '12px', fontWeight: '600' }}>
                               {log.profiles?.full_name}
                             </div>
                             <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                              {new Date(log.start_time).toLocaleDateString()}
+                              {new Date(log.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {' · '}
+                              {new Date(log.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                              {log.end_time && ' → ' + new Date(log.end_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
                         </div>
                         <div style={{
-                          color: 'var(--accent-blue)', fontWeight: '700',
-                          fontSize: '13px', background: 'rgba(59,130,246,0.1)',
-                          padding: '3px 10px', borderRadius: '20px'
+                          color: 'var(--accent-blue)', fontWeight: '700', fontSize: '13px',
+                          background: 'rgba(59,130,246,0.1)', padding: '3px 10px', borderRadius: '20px'
                         }}>
-                          {formatDuration(log.duration_minutes)}
+                          {log.end_time ? formatDuration(log.duration_minutes) : '⏱ Running...'}
                         </div>
                       </div>
                     ))}
@@ -888,7 +985,10 @@ export default function Tasks({ profile }) {
 
               {/* Admin Actions */}
               {(isAdmin || isManager) && (
-                <div style={{ display: 'flex', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+                <div style={{
+                  display: 'flex', gap: '8px', marginTop: '20px',
+                  paddingTop: '16px', borderTop: '1px solid var(--border)'
+                }}>
                   <button onClick={() => { openEdit(showDetail); setShowDetail(null) }} className="btn btn-secondary btn-sm">
                     ✏️ Edit Task
                   </button>
@@ -908,13 +1008,15 @@ export default function Tasks({ profile }) {
       {showModal && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{
+              padding: '20px 24px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
               <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '17px', fontWeight: '700' }}>
                 {editTask ? '✏️ Edit Task' : '+ New Task'}
               </h3>
               <button onClick={closeModal} className="btn-icon">✕</button>
             </div>
-
             <div style={{ padding: '20px 24px' }}>
               {message && (
                 <div style={{
@@ -926,7 +1028,7 @@ export default function Tasks({ profile }) {
 
               {[
                 { label: 'Task Title *', key: 'title', type: 'text', placeholder: 'Enter task title...' },
-                { label: 'Description', key: 'description', type: 'text', placeholder: 'Add more details...' },
+                { label: 'Description', key: 'description', type: 'text', placeholder: 'Add details...' },
                 { label: 'Project', key: 'project', type: 'text', placeholder: 'Project name' },
                 { label: 'Due Date', key: 'due_date', type: 'date' },
                 { label: 'Estimated Hours', key: 'estimated_hours', type: 'number', placeholder: '8' },
@@ -935,9 +1037,7 @@ export default function Tasks({ profile }) {
                   <label className="input-label">{field.label}</label>
                   <input type={field.type} value={form[field.key]}
                     onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                    placeholder={field.placeholder}
-                    className="input"
-                  />
+                    placeholder={field.placeholder} className="input" />
                 </div>
               ))}
 
