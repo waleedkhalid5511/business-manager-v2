@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import Employees from './pages/Employees'
 import Attendance from './pages/Attendance'
+import Tasks from './pages/Tasks'
+import Payroll from './pages/Payroll'
+import Messages from './pages/Messages'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -87,7 +90,9 @@ function LoginPage() {
 
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>Email</label>
+            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+              Email
+            </label>
             <input
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -101,7 +106,9 @@ function LoginPage() {
             />
           </div>
           <div style={{ marginBottom: '24px' }}>
-            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>Password</label>
+            <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+              Password
+            </label>
             <input
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -150,6 +157,9 @@ function DashboardPage({ session }) {
     { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
     { id: 'employees', icon: '👥', label: 'Employees' },
     { id: 'attendance', icon: '📅', label: 'Attendance' },
+    { id: 'tasks', icon: '✅', label: 'Tasks' },
+    { id: 'payroll', icon: '💰', label: 'Payroll' },
+    { id: 'messages', icon: '💬', label: 'Messages' },
   ]
 
   if (loading) return <div style={{ color: 'white', padding: '20px' }}>Loading...</div>
@@ -247,21 +257,49 @@ function DashboardPage({ session }) {
 
         <div style={{ padding: '24px' }}>
           {activeTab === 'dashboard' && (
-            <div style={{
-              background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
-              borderRadius: '16px', padding: '40px',
-              border: '1px solid #334155'
-            }}>
-              <h2 style={{ color: 'white', margin: '0 0 12px', fontSize: '24px' }}>
-                👋 Welcome, {profile?.full_name}!
-              </h2>
-              <p style={{ color: '#cbd5e1', margin: 0 }}>
-                Left menu se pages open karein.
-              </p>
+            <div>
+              {/* Welcome */}
+              <div style={{
+                background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
+                borderRadius: '16px', padding: '28px',
+                marginBottom: '24px', border: '1px solid #334155'
+              }}>
+                <h2 style={{ color: 'white', margin: '0 0 8px', fontSize: '22px' }}>
+                  👋 Welcome, {profile?.full_name}!
+                </h2>
+                <p style={{ color: '#94a3b8', margin: 0 }}>
+                  Aapka Business Manager ready hai. Left menu se koi bhi page kholo!
+                </p>
+              </div>
+
+              {/* Quick Actions */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: '14px'
+              }}>
+                {menuItems.slice(1).map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    style={{
+                      background: '#1e293b', border: '1px solid #334155',
+                      borderRadius: '12px', padding: '20px',
+                      color: 'white', cursor: 'pointer', textAlign: 'center'
+                    }}
+                  >
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{item.label}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {activeTab === 'employees' && <Employees profile={profile} />}
           {activeTab === 'attendance' && <Attendance profile={profile} />}
+          {activeTab === 'tasks' && <Tasks profile={profile} />}
+          {activeTab === 'payroll' && <Payroll profile={profile} />}
+          {activeTab === 'messages' && <Messages profile={profile} />}
         </div>
       </div>
     </div>
