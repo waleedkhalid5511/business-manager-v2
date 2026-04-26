@@ -7,6 +7,7 @@ import Tasks from './pages/Tasks'
 import Payroll from './pages/Payroll'
 import Messages from './pages/Messages'
 import Settings from './pages/Settings'
+import Projects from './pages/Projects'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -72,7 +73,6 @@ function LoginPage() {
       display: 'flex', fontFamily: 'inherit',
       position: 'relative', overflow: 'hidden'
     }}>
-      {/* Background Effects */}
       <div style={{
         position: 'absolute', top: '-20%', left: '-10%',
         width: '600px', height: '600px', borderRadius: '50%',
@@ -93,9 +93,7 @@ function LoginPage() {
         borderRight: '1px solid var(--border)'
       }} className="hide-mobile">
         <div style={{ maxWidth: '480px' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' }}>
             <div style={{
               width: '44px', height: '44px', borderRadius: '12px',
               background: 'var(--gradient-blue)', display: 'flex',
@@ -120,18 +118,14 @@ function LoginPage() {
             Complete business management with employees, tasks, attendance, payroll, and real-time communication.
           </p>
 
-          {/* Feature List */}
           {[
             { icon: '👥', text: 'Employee & Role Management' },
-            { icon: '✅', text: 'Kanban Task Boards' },
+            { icon: '📁', text: 'Projects & Kanban Boards' },
             { icon: '📅', text: 'Smart Attendance Tracking' },
             { icon: '💰', text: 'Automated Payroll System' },
             { icon: '💬', text: 'Real-time Team Messaging' },
           ].map(f => (
-            <div key={f.text} style={{
-              display: 'flex', alignItems: 'center', gap: '12px',
-              marginBottom: '12px'
-            }}>
+            <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{
                 width: '32px', height: '32px', borderRadius: '8px',
                 background: 'rgba(59,130,246,0.1)', display: 'flex',
@@ -143,25 +137,12 @@ function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel — Login Form */}
+      {/* Right Panel */}
       <div style={{
         width: '480px', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '40px'
       }}>
         <div style={{ width: '100%', maxWidth: '380px' }}>
-          {/* Mobile Logo */}
-          <div style={{ textAlign: 'center', marginBottom: '32px' }} className="show-mobile">
-            <div style={{
-              width: '56px', height: '56px', borderRadius: '16px',
-              background: 'var(--gradient-blue)', display: 'flex',
-              alignItems: 'center', justifyContent: 'center',
-              fontSize: '28px', margin: '0 auto 12px'
-            }}>🏢</div>
-            <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '20px' }}>
-              Business Manager
-            </div>
-          </div>
-
           <h2 style={{ color: 'var(--text-primary)', fontSize: '24px', fontWeight: '700', margin: '0 0 8px' }}>
             Welcome back 👋
           </h2>
@@ -182,32 +163,21 @@ function LoginPage() {
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
               <label className="input-label">Email Address</label>
-              <input
-                type="email" value={email}
+              <input type="email" value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com" required
-                className="input"
-              />
+                placeholder="you@company.com" required className="input" />
             </div>
             <div style={{ marginBottom: '24px' }}>
               <label className="input-label">Password</label>
-              <input
-                type="password" value={password}
+              <input type="password" value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••" required
-                className="input"
-              />
+                placeholder="••••••••" required className="input" />
             </div>
             <button type="submit" disabled={loading} className="btn btn-primary" style={{
               width: '100%', justifyContent: 'center', padding: '13px',
               fontSize: '15px', opacity: loading ? 0.7 : 1
             }}>
-              {loading ? (
-                <>
-                  <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
-                  Signing in...
-                </>
-              ) : 'Sign In →'}
+              {loading ? '⟳ Signing in...' : 'Sign In →'}
             </button>
           </form>
 
@@ -225,7 +195,6 @@ function MainApp({ session }) {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
 
   useEffect(() => { getProfile() }, [])
@@ -251,6 +220,7 @@ function MainApp({ session }) {
     {
       title: 'Work',
       items: [
+        { id: 'projects', icon: '📁', label: 'Projects' },
         { id: 'tasks', icon: '✦', label: 'Tasks' },
         { id: 'attendance', icon: '◷', label: 'Attendance' },
       ]
@@ -289,22 +259,20 @@ function MainApp({ session }) {
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
-      {/* ===== SIDEBAR ===== */}
+      {/* Sidebar */}
       <div style={{
         width: sidebarCollapsed ? '64px' : '220px',
         background: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
         transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
-        flexShrink: 0, zIndex: 100,
-        overflow: 'hidden'
+        flexShrink: 0, zIndex: 100, overflow: 'hidden'
       }}>
         {/* Logo */}
         <div style={{
           height: '56px', padding: '0 14px',
           display: 'flex', alignItems: 'center',
-          gap: '10px', borderBottom: '1px solid var(--border)',
-          flexShrink: 0
+          gap: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0
         }}>
           <div style={{
             width: '32px', height: '32px', borderRadius: '9px',
@@ -317,9 +285,7 @@ function MainApp({ session }) {
               <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>
                 Business Manager
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                Enterprise
-              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>Enterprise</div>
             </div>
           )}
         </div>
@@ -363,22 +329,18 @@ function MainApp({ session }) {
           ))}
         </nav>
 
-        {/* Profile */}
-        <div style={{
-          padding: '10px 8px', borderTop: '1px solid var(--border)',
-          flexShrink: 0
-        }}>
+        {/* Profile + Logout */}
+        <div style={{ padding: '10px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           {!sidebarCollapsed && profile && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px', borderRadius: 'var(--radius-md)',
-              background: 'var(--bg-hover)', marginBottom: '6px',
-              cursor: 'pointer'
+              background: 'var(--bg-hover)', marginBottom: '6px', cursor: 'pointer'
             }} onClick={() => setActiveTab('settings')}>
               <div className="avatar avatar-sm" style={{
-                background: roleColor[profile.role] ? `${roleColor[profile.role]}33` : 'var(--gradient-blue)',
-                color: roleColor[profile.role] || 'white',
-                border: `1px solid ${roleColor[profile.role] || 'var(--border)'}40`,
+                background: `${roleColor[profile.role] || '#3b82f6'}33`,
+                color: roleColor[profile.role] || '#3b82f6',
+                border: `1px solid ${roleColor[profile.role] || '#3b82f6'}40`,
                 fontSize: '13px'
               }}>
                 {profile.full_name?.charAt(0).toUpperCase()}
@@ -399,59 +361,41 @@ function MainApp({ session }) {
               </div>
             </div>
           )}
-
-          <button
-            onClick={handleLogout}
-            className="nav-item"
-            style={{
-              color: 'var(--accent-red)',
-              justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-              padding: sidebarCollapsed ? '10px' : '10px 12px'
-            }}
-            data-tooltip={sidebarCollapsed ? 'Logout' : undefined}
-          >
+          <button onClick={handleLogout} className="nav-item" style={{
+            color: 'var(--accent-red)',
+            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+            padding: sidebarCollapsed ? '10px' : '10px 12px'
+          }}>
             <span style={{ fontSize: '16px' }}>⎋</span>
             {!sidebarCollapsed && <span>Logout</span>}
           </button>
         </div>
       </div>
 
-      {/* ===== MAIN AREA ===== */}
+      {/* Main Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {/* Top Bar */}
         <div className="topbar">
-          {/* Left */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="btn-icon"
-            >
+            <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="btn-icon">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <rect y="2" width="16" height="1.5" rx="0.75" />
                 <rect y="7.25" width="16" height="1.5" rx="0.75" />
                 <rect y="12.5" width="16" height="1.5" rx="0.75" />
               </svg>
             </button>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                {currentItem?.icon}
-              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{currentItem?.icon}</span>
               <span style={{ color: 'var(--text-primary)', fontSize: '15px', fontWeight: '600' }}>
                 {currentItem?.label}
               </span>
             </div>
           </div>
 
-          {/* Right */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              {new Date().toLocaleDateString('en-PK', {
-                weekday: 'short', month: 'short', day: 'numeric'
-              })}
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
-
-            {/* Notification Bell */}
             <button className="btn-icon" style={{ position: 'relative' }}
               onClick={() => setShowNotifications(!showNotifications)}>
               🔔
@@ -461,13 +405,8 @@ function MainApp({ session }) {
                 background: 'var(--accent-red)', border: '2px solid var(--bg-secondary)'
               }} />
             </button>
-
-            {/* Profile Avatar */}
-            <div
-              className="avatar avatar-sm"
-              style={{ cursor: 'pointer' }}
-              onClick={() => setActiveTab('settings')}
-            >
+            <div className="avatar avatar-sm" style={{ cursor: 'pointer' }}
+              onClick={() => setActiveTab('settings')}>
               {profile?.full_name?.charAt(0).toUpperCase()}
             </div>
           </div>
@@ -479,6 +418,7 @@ function MainApp({ session }) {
           {activeTab === 'employees' && <Employees profile={profile} />}
           {activeTab === 'attendance' && <Attendance profile={profile} />}
           {activeTab === 'tasks' && <Tasks profile={profile} />}
+          {activeTab === 'projects' && <Projects profile={profile} />}
           {activeTab === 'payroll' && <Payroll profile={profile} />}
           {activeTab === 'messages' && <Messages profile={profile} />}
           {activeTab === 'settings' && <Settings profile={profile} />}
