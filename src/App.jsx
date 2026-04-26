@@ -87,7 +87,6 @@ function LoginPage() {
         pointerEvents: 'none'
       }} />
 
-      {/* Left Panel */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         justifyContent: 'center', padding: '60px',
@@ -136,7 +135,6 @@ function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
       <div style={{
         width: '480px', display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: '40px'
@@ -197,7 +195,7 @@ function MainApp({ session }) {
   const {
     canAccess, isInSidebar, presentationMode,
     togglePresentationMode, toggleModule,
-    permissions, getModulePermission, allPermissions
+    permissions, getModulePermission
   } = usePermissions(profile)
 
   const {
@@ -207,16 +205,28 @@ function MainApp({ session }) {
 
   useEffect(() => { getProfile() }, [])
 
-  // 🔐 Secret Admin Panel — Ctrl+Shift+A
+  // 🔐 STEALTH SHORTCUTS — No visible buttons
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'A' && profile?.role === 'admin') {
+      if (!profile?.role === 'admin') return
+
+      // Ctrl+Shift+A = Secret Admin Panel
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault()
         setShowAdminPanel(prev => !prev)
+      }
+
+      // Ctrl+Shift+P = Presentation Mode Toggle
+      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+        e.preventDefault()
+        if (profile?.role === 'admin') {
+          togglePresentationMode(!presentationMode)
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [profile])
+  }, [profile, presentationMode])
 
   const getProfile = async () => {
     const { data } = await supabase
@@ -259,10 +269,23 @@ function MainApp({ session }) {
     }
   ]
 
-  // Filter sidebar based on permissions — stealth system
+  // Presentation mode modules
+  const PRESENTATION_MODULES = ['dashboard', 'projects', 'tasks', 'messages', 'files']
+
+  // Filter sidebar — STEALTH
   const filteredNavSections = ALL_NAV_SECTIONS.map(section => ({
     ...section,
-    items: section.items.filter(item => isInSidebar(item.id))
+    items: section.items.filter(item => {
+      // Admin always sees everything
+      if (profile?.role === 'admin') {
+        // In presentation mode, admin sidebar also filters
+        if (presentationMode) {
+          return PRESENTATION_MODULES.includes(item.id)
+        }
+        return true
+      }
+      return isInSidebar(item.id)
+    })
   })).filter(section => section.items.length > 0)
 
   const allItems = ALL_NAV_SECTIONS.flatMap(s => s.items)
@@ -285,32 +308,6 @@ function MainApp({ session }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
 
-      {/* ===== PRESENTATION MODE BANNER ===== */}
-      {presentationMode && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-          background: 'linear-gradient(90deg, #10b981, #059669)',
-          padding: '8px 20px', display: 'flex',
-          justifyContent: 'space-between', alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>🎭</span>
-            <span style={{ color: 'white', fontWeight: '700', fontSize: '13px' }}>
-              PRESENTATION MODE — Client-safe view active
-            </span>
-          </div>
-          {profile?.role === 'admin' && (
-            <button onClick={() => togglePresentationMode(false)} style={{
-              background: 'rgba(255,255,255,0.2)', border: 'none',
-              borderRadius: '6px', padding: '4px 12px',
-              color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
-            }}>
-              Exit Presentation Mode
-            </button>
-          )}
-        </div>
-      )}
-
       {/* ===== SIDEBAR ===== */}
       <div style={{
         width: sidebarCollapsed ? '64px' : '220px',
@@ -318,8 +315,7 @@ function MainApp({ session }) {
         borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
         transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
-        flexShrink: 0, zIndex: 100, overflow: 'hidden',
-        marginTop: presentationMode ? '36px' : 0
+        flexShrink: 0, zIndex: 100, overflow: 'hidden'
       }}>
         {/* Logo */}
         <div style={{
@@ -339,13 +335,13 @@ function MainApp({ session }) {
                 Business Manager
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                {presentationMode ? '🎭 Presentation' : 'Enterprise'}
+                Enterprise
               </div>
             </div>
           )}
         </div>
 
-        {/* Nav */}
+        {/* Nav — Filtered by permissions */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 8px' }}>
           {filteredNavSections.map(section => (
             <div key={section.title} style={{ marginBottom: '8px' }}>
@@ -425,12 +421,8 @@ function MainApp({ session }) {
       </div>
 
       {/* ===== MAIN AREA ===== */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        overflow: 'hidden', minWidth: 0,
-        marginTop: presentationMode ? '36px' : 0
-      }}>
-        {/* Top Bar */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        {/* Top Bar — CLEAN, no admin buttons */}
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="btn-icon">
@@ -446,34 +438,9 @@ function MainApp({ session }) {
                 {currentItem?.label}
               </span>
             </div>
-
-            {/* Presentation Mode Button — Admin Only */}
-            {profile?.role === 'admin' && !presentationMode && (
-              <button onClick={() => togglePresentationMode(true)} style={{
-                background: 'rgba(16,185,129,0.1)',
-                border: '1px solid rgba(16,185,129,0.3)',
-                borderRadius: '6px', padding: '4px 12px',
-                color: '#10b981', cursor: 'pointer',
-                fontSize: '12px', fontWeight: '600', marginLeft: '8px'
-              }}>
-                🎭 Presentation Mode
-              </button>
-            )}
-
-            {/* Secret Admin Panel Button — Admin Only */}
-            {profile?.role === 'admin' && (
-              <button onClick={() => setShowAdminPanel(true)} style={{
-                background: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: '6px', padding: '4px 12px',
-                color: '#ef4444', cursor: 'pointer',
-                fontSize: '12px', fontWeight: '600'
-              }}>
-                🔐 Admin Panel
-              </button>
-            )}
           </div>
 
+          {/* Right side — CLEAN */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
               {new Date().toLocaleDateString('en-US', {
@@ -485,10 +452,7 @@ function MainApp({ session }) {
             <div style={{ position: 'relative' }}>
               <button
                 className="btn-icon"
-                onClick={() => {
-                  setShowNotifPanel(!showNotifPanel)
-                  setShowAdminPanel(false)
-                }}
+                onClick={() => setShowNotifPanel(!showNotifPanel)}
                 style={{ position: 'relative' }}
               >
                 🔔
@@ -528,18 +492,14 @@ function MainApp({ session }) {
                           background: 'var(--accent-red)', color: 'white',
                           borderRadius: '20px', padding: '1px 7px',
                           fontSize: '11px', fontWeight: '700'
-                        }}>
-                          {unreadCount}
-                        </span>
+                        }}>{unreadCount}</span>
                       )}
                     </div>
                     <button onClick={markAllRead} style={{
                       background: 'transparent', border: 'none',
                       color: 'var(--accent-blue)', cursor: 'pointer',
                       fontSize: '12px', fontWeight: '600'
-                    }}>
-                      Mark all read
-                    </button>
+                    }}>Mark all read</button>
                   </div>
                   <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {notifications.length === 0 ? (
@@ -557,8 +517,7 @@ function MainApp({ session }) {
                         >
                           <div style={{
                             width: '36px', height: '36px', borderRadius: '10px',
-                            background: notif.is_read
-                              ? 'var(--bg-hover)' : 'rgba(59,130,246,0.15)',
+                            background: notif.is_read ? 'var(--bg-hover)' : 'rgba(59,130,246,0.15)',
                             display: 'flex', alignItems: 'center',
                             justifyContent: 'center', fontSize: '18px', flexShrink: 0
                           }}>
@@ -637,7 +596,7 @@ function MainApp({ session }) {
         </div>
       </div>
 
-      {/* ===== SECRET ADMIN PANEL ===== */}
+      {/* ===== SECRET ADMIN PANEL — No visible trigger ===== */}
       {showAdminPanel && profile?.role === 'admin' && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
@@ -652,7 +611,6 @@ function MainApp({ session }) {
             animation: 'bounceIn 0.3s ease'
           }} onClick={e => e.stopPropagation()}>
 
-            {/* Panel Header */}
             <div style={{
               padding: '20px 24px', borderBottom: '1px solid var(--border)',
               background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
@@ -660,14 +618,11 @@ function MainApp({ session }) {
               display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '20px' }}>🔐</span>
-                  <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '700' }}>
-                    Secret Admin Panel
-                  </h2>
-                </div>
+                <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '700' }}>
+                  Control Panel
+                </h2>
                 <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: '12px' }}>
-                  Press Ctrl+Shift+A to toggle • Invisible to other users
+                  Ctrl+Shift+A to open/close · Ctrl+Shift+P for presentation mode
                 </p>
               </div>
               <button onClick={() => setShowAdminPanel(false)} className="btn-icon" style={{ color: 'white' }}>
@@ -676,19 +631,19 @@ function MainApp({ session }) {
             </div>
 
             <div style={{ padding: '24px' }}>
-              {/* Presentation Mode */}
+              {/* Presentation Mode Toggle */}
               <div style={{
                 background: 'var(--bg-hover)', borderRadius: '12px',
                 padding: '16px', marginBottom: '20px',
-                border: '1px solid var(--border)'
+                border: `1px solid ${presentationMode ? 'rgba(16,185,129,0.3)' : 'var(--border)'}`
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px' }}>
-                      🎭 Presentation Mode
+                      Presentation Mode
                     </div>
                     <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-                      Activate client-safe view — hides payroll, penalties, internal data
+                      {presentationMode ? '✅ Active — Client-safe view' : 'Show clean view for screen sharing'}
                     </div>
                   </div>
                   <div onClick={() => togglePresentationMode(!presentationMode)} style={{
@@ -712,7 +667,7 @@ function MainApp({ session }) {
                 color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
               }}>
-                Module Visibility — Control what each role can see
+                Module Visibility Control
               </div>
 
               {['partner', 'employee', 'client'].map(role => (
@@ -721,30 +676,23 @@ function MainApp({ session }) {
                   padding: '16px', marginBottom: '12px',
                   border: '1px solid var(--border)'
                 }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px'
-                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                     <span style={{
-                      background: `${roleColor[role]}22`,
-                      color: roleColor[role],
+                      background: `${{ partner: '#8b5cf6', employee: '#3b82f6', client: '#10b981' }[role]}22`,
+                      color: { partner: '#8b5cf6', employee: '#3b82f6', client: '#10b981' }[role],
                       padding: '3px 10px', borderRadius: '20px',
                       fontSize: '12px', fontWeight: '700', textTransform: 'capitalize'
                     }}>
                       {role}
                     </span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                      view permissions
-                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>view permissions</span>
                   </div>
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))',
                     gap: '8px'
                   }}>
-                    {[
-                      'dashboard', 'messages', 'projects', 'tasks',
-                      'attendance', 'employees', 'payroll', 'files', 'settings'
-                    ].map(moduleId => (
+                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'employees', 'payroll', 'files', 'settings'].map(moduleId => (
                       <ModuleToggle
                         key={`${moduleId}-${role}`}
                         moduleId={moduleId}
@@ -757,18 +705,19 @@ function MainApp({ session }) {
                 </div>
               ))}
 
-              {/* Quick Actions */}
+              {/* Quick Access */}
               <div style={{
                 color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em',
-                marginBottom: '12px', marginTop: '4px'
+                marginBottom: '12px', marginTop: '8px'
               }}>
                 Quick Access
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
                 {[
                   { label: 'Payroll', icon: '💰', tab: 'payroll' },
                   { label: 'People', icon: '👥', tab: 'employees' },
+                  { label: 'Attendance', icon: '📅', tab: 'attendance' },
                   { label: 'Settings', icon: '⚙️', tab: 'settings' },
                 ].map(item => (
                   <button key={item.label} onClick={() => {
@@ -779,7 +728,7 @@ function MainApp({ session }) {
                     borderRadius: '10px', padding: '14px', color: 'var(--text-primary)',
                     cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: '24px', marginBottom: '6px' }}>{item.icon}</div>
+                    <div style={{ fontSize: '22px', marginBottom: '6px' }}>{item.icon}</div>
                     {item.label}
                   </button>
                 ))}
@@ -789,7 +738,6 @@ function MainApp({ session }) {
         </div>
       )}
 
-      {/* Click outside panels to close */}
       {showNotifPanel && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999 }}
           onClick={() => setShowNotifPanel(false)} />
@@ -798,7 +746,6 @@ function MainApp({ session }) {
   )
 }
 
-// ===== MODULE TOGGLE COMPONENT =====
 function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
   const [enabled, setEnabled] = useState(initialValue !== false)
 
@@ -820,7 +767,6 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
     attendance: '📅 Attendance',
     employees: '👥 People',
     payroll: '💰 Payroll',
-    analytics: '📊 Analytics',
     files: '📁 Files',
     settings: '⚙️ Settings',
   }
