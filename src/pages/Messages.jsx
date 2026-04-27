@@ -13,7 +13,6 @@ export default function Messages({ profile }) {
   const [search, setSearch] = useState('')
   const [pinnedMessages, setPinnedMessages] = useState([])
   const [showPinned, setShowPinned] = useState(false)
-  const [onlineUsers, setOnlineUsers] = useState([])
   const [members, setMembers] = useState([])
   const [showMembers, setShowMembers] = useState(false)
   const [editingMessage, setEditingMessage] = useState(null)
@@ -31,18 +30,25 @@ export default function Messages({ profile }) {
   }, [profile])
 
   useEffect(() => {
-    if (activeChannel) {
-      fetchMessages()
-      fetchPinnedMessages()
-      const subscription = supabase
-        .channel(`room-${activeChannel.id}`)
-        .on('postgres_changes', {
-          event: '*', schema: 'public', table: 'messages',
-          filter: `channel_id=eq.${activeChannel.id}`
-        }, () => fetchMessages())
-        .subscribe()
-      return () => subscription.unsubscribe()
-    }
+    if (!activeChannel) return
+
+    fetchMessages()
+    fetchPinnedMessages()
+
+    // ⚡ REALTIME
+    const sub = supabase
+      .channel(`messages-live-${activeChannel.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public',
+        table: 'messages',
+        filter: `channel_id=eq.${activeChannel.id}`
+      }, () => {
+        fetchMessages()
+        fetchPinnedMessages()
+      })
+      .subscribe()
+
+    return () => sub.unsubscribe()
   }, [activeChannel])
 
   useEffect(() => {
@@ -102,15 +108,12 @@ export default function Messages({ profile }) {
 
   const deleteMessage = async (msgId) => {
     await supabase.from('messages').delete().eq('id', msgId)
-    fetchMessages()
   }
 
   const pinMessage = async (msg) => {
     await supabase.from('messages')
       .update({ is_edited: !msg.is_edited })
       .eq('id', msg.id)
-    fetchMessages()
-    fetchPinnedMessages()
   }
 
   const startEdit = (msg) => {
@@ -125,7 +128,6 @@ export default function Messages({ profile }) {
       .eq('id', msgId)
     setEditingMessage(null)
     setEditContent('')
-    fetchMessages()
   }
 
   const createChannel = async () => {
@@ -172,10 +174,8 @@ export default function Messages({ profile }) {
   }
 
   const roleColor = {
-    admin: '#ef4444',
-    manager: '#f59e0b',
-    employee: '#3b82f6',
-    partner: '#8b5cf6'
+    admin: '#ef4444', manager: '#f59e0b',
+    employee: '#3b82f6', partner: '#8b5cf6', client: '#10b981'
   }
 
   const groupedMessages = messages.reduce((groups, msg) => {
@@ -189,8 +189,6 @@ export default function Messages({ profile }) {
     ? messages.filter(m => m.content?.toLowerCase().includes(search.toLowerCase()))
     : null
 
-  const unreadCount = (channelId) => 0
-
   return (
     <div style={{
       display: 'flex',
@@ -200,132 +198,83 @@ export default function Messages({ profile }) {
       border: '1px solid var(--border)',
       background: 'var(--bg-secondary)'
     }}>
-      {/* ===== SIDEBAR ===== */}
+      {/* SIDEBAR */}
       <div style={{
         width: '240px', background: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column',
-        flexShrink: 0
+        display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
-        {/* Workspace Header */}
+        {/* Header */}
         <div style={{
-          padding: '14px 16px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between'
+          padding: '14px 16px', borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between'
         }}>
           <div>
-            <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
-              Workspace
-            </div>
+            <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>Workspace</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
               <div className="status-dot online" style={{ width: '6px', height: '6px' }} />
-              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                {members.length} members
-              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{members.length} members</span>
             </div>
           </div>
         </div>
 
-        {/* Search Channels */}
+        {/* Search */}
         <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-          <input
-            type="text"
-            placeholder="🔍 Search messages..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <input type="text" placeholder="🔍 Search messages..."
+            value={search} onChange={(e) => setSearch(e.target.value)}
             style={{
-              width: '100%', padding: '7px 10px',
-              background: 'var(--bg-hover)',
-              border: '1px solid var(--border)',
-              borderRadius: '6px', color: 'var(--text-primary)',
-              fontSize: '12px', outline: 'none',
-              boxSizing: 'border-box'
+              width: '100%', padding: '7px 10px', background: 'var(--bg-hover)',
+              border: '1px solid var(--border)', borderRadius: '6px',
+              color: 'var(--text-primary)', fontSize: '12px', outline: 'none', boxSizing: 'border-box'
             }}
           />
         </div>
 
-        {/* Channels */}
+        {/* Channels List */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between',
-            alignItems: 'center', padding: '4px 16px 6px',
-          }}>
-            <span style={{
-              color: 'var(--text-muted)', fontSize: '11px',
-              fontWeight: '700', textTransform: 'uppercase',
-              letterSpacing: '0.08em'
-            }}>Channels</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 16px 6px' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Channels
+            </span>
             {(isAdmin || isManager) && (
-              <button onClick={() => setShowNewChannel(true)}
-                className="btn-icon" style={{ fontSize: '16px', padding: '2px 4px' }}>
-                +
-              </button>
+              <button onClick={() => setShowNewChannel(true)} className="btn-icon" style={{ fontSize: '18px', padding: '2px 6px' }}>+</button>
             )}
           </div>
 
           {channels.map(channel => (
             <div key={channel.id} style={{ position: 'relative' }}>
-              <button
-                onClick={() => { setActiveChannel(channel); setShowMembers(false) }}
-                style={{
-                  width: '100%', padding: '7px 16px',
-                  background: activeChannel?.id === channel.id
-                    ? 'rgba(59,130,246,0.12)' : 'transparent',
-                  border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  transition: 'background 0.15s'
-                }}
-              >
+              <button onClick={() => { setActiveChannel(channel); setShowMembers(false) }} style={{
+                width: '100%', padding: '7px 16px',
+                background: activeChannel?.id === channel.id ? 'rgba(59,130,246,0.12)' : 'transparent',
+                border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.15s'
+              }}>
+                <span style={{ color: activeChannel?.id === channel.id ? 'var(--accent-blue)' : 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>#</span>
                 <span style={{
-                  color: activeChannel?.id === channel.id
-                    ? 'var(--accent-blue)' : 'var(--text-muted)',
-                  fontSize: '14px', fontWeight: '500'
-                }}>
-                  #
-                </span>
-                <span style={{
-                  color: activeChannel?.id === channel.id
-                    ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  color: activeChannel?.id === channel.id ? 'var(--text-primary)' : 'var(--text-secondary)',
                   fontSize: '14px', fontWeight: activeChannel?.id === channel.id ? '600' : '400',
-                  flex: 1, textAlign: 'left',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                 }}>
                   {channel.name}
                 </span>
                 {activeChannel?.id === channel.id && isAdmin && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteChannel(channel.id) }}
-                    style={{
-                      background: 'transparent', border: 'none',
-                      color: 'var(--text-muted)', cursor: 'pointer',
-                      fontSize: '12px', padding: '2px', opacity: 0.6
-                    }}
-                  >🗑️</button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteChannel(channel.id) }} style={{
+                    background: 'transparent', border: 'none', color: 'var(--text-muted)',
+                    cursor: 'pointer', fontSize: '12px', padding: '2px', opacity: 0.6
+                  }}>🗑️</button>
                 )}
               </button>
             </div>
           ))}
 
-          {/* Direct Messages Section */}
-          <div style={{
-            padding: '12px 16px 6px',
-            marginTop: '8px',
-            borderTop: '1px solid var(--border)'
-          }}>
-            <span style={{
-              color: 'var(--text-muted)', fontSize: '11px',
-              fontWeight: '700', textTransform: 'uppercase',
-              letterSpacing: '0.08em'
-            }}>
+          {/* Members Section */}
+          <div style={{ padding: '12px 16px 6px', marginTop: '8px', borderTop: '1px solid var(--border)' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Members
             </span>
           </div>
           {members.slice(0, 8).map(member => (
-            <div key={member.id} style={{
-              padding: '5px 16px',
-              display: 'flex', alignItems: 'center', gap: '8px'
-            }}>
+            <div key={member.id} style={{ padding: '5px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ position: 'relative' }}>
                 <div className="avatar" style={{
                   width: '24px', height: '24px', fontSize: '10px',
@@ -337,31 +286,22 @@ export default function Messages({ profile }) {
                 </div>
                 <div className="status-dot online" style={{
                   position: 'absolute', bottom: '-1px', right: '-1px',
-                  width: '7px', height: '7px',
-                  border: '1.5px solid var(--bg-secondary)'
+                  width: '7px', height: '7px', border: '1.5px solid var(--bg-secondary)'
                 }} />
               </div>
               <span style={{
-                color: member.id === profile.id
-                  ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontSize: '13px',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                color: member.id === profile.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
               }}>
                 {member.full_name}
-                {member.id === profile.id && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}> (you)</span>
-                )}
+                {member.id === profile.id && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}> (you)</span>}
               </span>
             </div>
           ))}
         </div>
 
-        {/* User Profile */}
-        <div style={{
-          padding: '10px 12px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', gap: '8px'
-        }}>
+        {/* My Profile */}
+        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ position: 'relative' }}>
             <div className="avatar avatar-sm" style={{
               background: `${roleColor[profile?.role] || '#3b82f6'}33`,
@@ -372,30 +312,22 @@ export default function Messages({ profile }) {
             </div>
             <div className="status-dot online" style={{
               position: 'absolute', bottom: '-1px', right: '-1px',
-              width: '8px', height: '8px',
-              border: '2px solid var(--bg-secondary)'
+              width: '8px', height: '8px', border: '2px solid var(--bg-secondary)'
             }} />
           </div>
           <div style={{ overflow: 'hidden', flex: 1 }}>
-            <div style={{
-              color: 'var(--text-primary)', fontSize: '13px',
-              fontWeight: '600', whiteSpace: 'nowrap',
-              overflow: 'hidden', textOverflow: 'ellipsis'
-            }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {profile?.full_name}
             </div>
-            <div style={{
-              color: roleColor[profile?.role] || 'var(--text-muted)',
-              fontSize: '10px', textTransform: 'capitalize'
-            }}>
+            <div style={{ color: roleColor[profile?.role] || 'var(--text-muted)', fontSize: '10px', textTransform: 'capitalize' }}>
               {profile?.role}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ===== MAIN CHAT ===== */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* MAIN CHAT */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {activeChannel ? (
           <>
             {/* Channel Header */}
@@ -419,98 +351,64 @@ export default function Messages({ profile }) {
                   )}
                 </div>
               </div>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {/* Members Button */}
-                <button
-                  onClick={() => setShowMembers(!showMembers)}
-                  className="btn-icon"
-                  style={{ fontSize: '14px', gap: '5px', padding: '6px 10px' }}
-                >
+                <button onClick={() => setShowMembers(!showMembers)} className="btn-icon" style={{ fontSize: '14px', gap: '5px', padding: '6px 10px' }}>
                   👥 <span style={{ fontSize: '12px' }}>{members.length}</span>
                 </button>
-
-                {/* Pinned */}
-                <button
-                  onClick={() => setShowPinned(!showPinned)}
-                  className="btn-icon"
-                  style={{
-                    fontSize: '14px', padding: '6px 10px',
-                    background: showPinned ? 'var(--bg-hover)' : 'transparent',
-                    color: showPinned ? 'var(--accent-yellow)' : 'var(--text-muted)'
-                  }}
-                >
+                <button onClick={() => setShowPinned(!showPinned)} className="btn-icon" style={{
+                  fontSize: '14px', padding: '6px 10px',
+                  background: showPinned ? 'var(--bg-hover)' : 'transparent',
+                  color: showPinned ? 'var(--accent-yellow)' : 'var(--text-muted)'
+                }}>
                   📌
                   {pinnedMessages.length > 0 && (
                     <span style={{
                       background: 'var(--accent-yellow)', color: 'black',
                       borderRadius: '10px', padding: '1px 5px',
                       fontSize: '10px', fontWeight: '700', marginLeft: '2px'
-                    }}>
-                      {pinnedMessages.length}
-                    </span>
+                    }}>{pinnedMessages.length}</span>
                   )}
                 </button>
-
                 <div style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
-
-                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                  {messages.length} messages
-                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{messages.length} msgs</span>
               </div>
             </div>
 
-            {/* Pinned Messages Panel */}
+            {/* Pinned Messages */}
             {showPinned && pinnedMessages.length > 0 && (
               <div style={{
-                background: 'rgba(245,158,11,0.05)',
-                borderBottom: '1px solid rgba(245,158,11,0.2)',
+                background: 'rgba(245,158,11,0.05)', borderBottom: '1px solid rgba(245,158,11,0.2)',
                 padding: '12px 20px', flexShrink: 0
               }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  marginBottom: '10px'
-                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                   <span style={{ fontSize: '14px' }}>📌</span>
                   <span style={{ color: 'var(--accent-yellow)', fontSize: '12px', fontWeight: '700' }}>
                     Pinned Messages ({pinnedMessages.length})
                   </span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {pinnedMessages.map(msg => (
-                    <div key={msg.id} style={{
-                      background: 'var(--bg-hover)', borderRadius: '8px',
-                      padding: '8px 12px',
-                      borderLeft: '3px solid var(--accent-yellow)'
-                    }}>
-                      <span style={{ color: 'var(--accent-yellow)', fontSize: '11px', fontWeight: '700' }}>
-                        {msg.profiles?.full_name}
-                      </span>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '13px', marginLeft: '8px' }}>
-                        {msg.content}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {pinnedMessages.map(msg => (
+                  <div key={msg.id} style={{
+                    background: 'var(--bg-hover)', borderRadius: '8px', padding: '8px 12px',
+                    marginBottom: '6px', borderLeft: '3px solid var(--accent-yellow)'
+                  }}>
+                    <span style={{ color: 'var(--accent-yellow)', fontSize: '11px', fontWeight: '700' }}>{msg.profiles?.full_name}</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px', marginLeft: '8px' }}>{msg.content}</span>
+                  </div>
+                ))}
               </div>
             )}
 
             {/* Search Results */}
             {search && filteredMessages && (
               <div style={{
-                background: 'var(--bg-hover)',
-                borderBottom: '1px solid var(--border)',
-                padding: '12px 20px',
-                maxHeight: '200px', overflowY: 'auto', flexShrink: 0
+                background: 'var(--bg-hover)', borderBottom: '1px solid var(--border)',
+                padding: '12px 20px', maxHeight: '200px', overflowY: 'auto', flexShrink: 0
               }}>
                 <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '8px' }}>
                   {filteredMessages.length} results for "{search}"
                 </div>
                 {filteredMessages.map(msg => (
-                  <div key={msg.id} style={{
-                    background: 'var(--bg-card)', borderRadius: '8px',
-                    padding: '8px 12px', marginBottom: '6px'
-                  }}>
+                  <div key={msg.id} style={{ background: 'var(--bg-card)', borderRadius: '8px', padding: '8px 12px', marginBottom: '6px' }}>
                     <div style={{ color: 'var(--accent-blue)', fontSize: '11px', marginBottom: '3px', fontWeight: '700' }}>
                       {msg.profiles?.full_name} · {formatTime(msg.created_at)}
                     </div>
@@ -520,38 +418,27 @@ export default function Messages({ profile }) {
               </div>
             )}
 
-            {/* Messages Area */}
+            {/* Messages */}
             <div style={{
-              flex: 1, overflowY: 'auto',
-              padding: '20px', display: 'flex',
-              flexDirection: 'column', gap: '0'
+              flex: 1, overflowY: 'auto', padding: '16px 20px',
+              display: 'flex', flexDirection: 'column'
             }}>
               {messages.length === 0 ? (
-                <div className="empty-state">
-                  <div style={{ fontSize: '56px', marginBottom: '8px' }}>
-                    #{activeChannel.name}
-                  </div>
-                  <div className="empty-title">
-                    Welcome to #{activeChannel.name}!
-                  </div>
-                  <div className="empty-desc">
-                    {activeChannel.description || 'This is the beginning of this channel. Start the conversation!'}
-                  </div>
+                <div className="empty-state" style={{ flex: 1, justifyContent: 'center' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '8px' }}>#{activeChannel.name}</div>
+                  <div className="empty-title">Welcome to #{activeChannel.name}!</div>
+                  <div className="empty-desc">{activeChannel.description || 'Start the conversation!'}</div>
                 </div>
               ) : (
                 Object.entries(groupedMessages).map(([date, msgs]) => (
                   <div key={date}>
                     {/* Date Divider */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center',
-                      gap: '12px', margin: '20px 0 16px'
-                    }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
                       <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
                       <span style={{
-                        color: 'var(--text-muted)', fontSize: '11px',
-                        fontWeight: '700', whiteSpace: 'nowrap',
+                        color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                         background: 'var(--bg-hover)', padding: '3px 12px',
-                        borderRadius: '20px', border: '1px solid var(--border)'
+                        borderRadius: '20px', border: '1px solid var(--border)', whiteSpace: 'nowrap'
                       }}>
                         {formatDate(msgs[0].created_at)}
                       </span>
@@ -570,10 +457,9 @@ export default function Messages({ profile }) {
                           style={{
                             display: 'flex',
                             flexDirection: isOwn ? 'row-reverse' : 'row',
-                            gap: '10px',
-                            marginBottom: showHeader ? '16px' : '2px',
-                            alignItems: 'flex-end',
-                            position: 'relative'
+                            gap: '8px',
+                            marginBottom: showHeader ? '12px' : '3px',
+                            alignItems: 'flex-end'
                           }}
                           onMouseEnter={e => {
                             const actions = e.currentTarget.querySelector('.msg-actions')
@@ -586,24 +472,25 @@ export default function Messages({ profile }) {
                         >
                           {/* Avatar */}
                           {showHeader ? (
-                            <div className="avatar avatar-sm" style={{
+                            <div className="avatar" style={{
+                              width: '32px', height: '32px', fontSize: '13px',
                               background: `${roleColor[msg.profiles?.role] || '#3b82f6'}33`,
                               color: roleColor[msg.profiles?.role] || '#3b82f6',
                               border: `1px solid ${roleColor[msg.profiles?.role] || '#3b82f6'}40`,
-                              flexShrink: 0
+                              flexShrink: 0, alignSelf: 'flex-end'
                             }}>
                               {msg.profiles?.full_name?.charAt(0).toUpperCase()}
                             </div>
                           ) : (
-                            <div style={{ width: '28px', flexShrink: 0 }} />
+                            <div style={{ width: '32px', flexShrink: 0 }} />
                           )}
 
-                          <div style={{ maxWidth: '70%' }}>
+                          <div style={{ maxWidth: '65%', minWidth: 0 }}>
                             {/* Name + Time */}
                             {showHeader && (
                               <div style={{
-                                display: 'flex', alignItems: 'baseline',
-                                gap: '8px', marginBottom: '4px',
+                                display: 'flex', alignItems: 'baseline', gap: '8px',
+                                marginBottom: '4px',
                                 flexDirection: isOwn ? 'row-reverse' : 'row'
                               }}>
                                 <span style={{
@@ -616,86 +503,63 @@ export default function Messages({ profile }) {
                                   {formatTime(msg.created_at)}
                                 </span>
                                 {msg.is_edited && (
-                                  <span style={{
-                                    color: 'var(--accent-yellow)',
-                                    fontSize: '10px', fontWeight: '700'
-                                  }}>📌 pinned</span>
+                                  <span style={{ color: 'var(--accent-yellow)', fontSize: '10px', fontWeight: '700' }}>📌</span>
                                 )}
                               </div>
                             )}
 
-                            {/* Message Bubble */}
+                            {/* Bubble */}
                             {editingMessage === msg.id ? (
                               <div style={{ display: 'flex', gap: '6px' }}>
-                                <input
-                                  value={editContent}
+                                <input value={editContent}
                                   onChange={(e) => setEditContent(e.target.value)}
                                   onKeyPress={(e) => e.key === 'Enter' && saveEdit(msg.id)}
                                   style={{
-                                    flex: 1, padding: '8px 12px',
-                                    background: 'var(--bg-hover)',
-                                    border: '1px solid var(--accent-blue)',
-                                    borderRadius: '8px', color: 'var(--text-primary)',
-                                    fontSize: '13px', outline: 'none'
-                                  }}
-                                  autoFocus
-                                />
+                                    flex: 1, padding: '8px 12px', background: 'var(--bg-hover)',
+                                    border: '1px solid var(--accent-blue)', borderRadius: '8px',
+                                    color: 'var(--text-primary)', fontSize: '13px', outline: 'none'
+                                  }} autoFocus />
                                 <button onClick={() => saveEdit(msg.id)} className="btn btn-primary btn-sm">Save</button>
-                                <button onClick={() => setEditingMessage(null)} className="btn btn-secondary btn-sm">Cancel</button>
+                                <button onClick={() => setEditingMessage(null)} className="btn btn-secondary btn-sm">✕</button>
                               </div>
                             ) : (
-                              <div className={`message-bubble ${isOwn ? 'own' : 'other'}`}
-                                style={{
-                                  borderLeft: msg.is_edited && !isOwn
-                                    ? '3px solid var(--accent-yellow)' : undefined
-                                }}>
+                              <div style={{
+                                padding: '10px 14px',
+                                background: isOwn
+                                  ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'var(--bg-card)',
+                                border: isOwn ? 'none' : '1px solid var(--border)',
+                                borderRadius: isOwn ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
+                                color: 'white',
+                                fontSize: '14px', lineHeight: '1.5',
+                                wordBreak: 'break-word',
+                                display: 'inline-block',
+                                maxWidth: '100%'
+                              }}>
                                 {msg.content}
                               </div>
                             )}
                           </div>
 
-                          {/* Message Actions */}
-                          <div
-                            className="msg-actions"
-                            style={{
-                              position: 'absolute',
-                              top: '-4px',
-                              right: isOwn ? 'auto' : '-4px',
-                              left: isOwn ? '-4px' : 'auto',
-                              display: 'flex', gap: '2px',
-                              opacity: 0, transition: 'opacity 0.15s',
-                              background: 'var(--bg-card)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '8px', padding: '3px',
-                              boxShadow: 'var(--shadow-md)'
-                            }}
-                          >
+                          {/* Actions */}
+                          <div className="msg-actions" style={{
+                            display: 'flex', gap: '2px',
+                            opacity: 0, transition: 'opacity 0.15s',
+                            background: 'var(--bg-card)', border: '1px solid var(--border)',
+                            borderRadius: '8px', padding: '3px',
+                            boxShadow: 'var(--shadow-md)',
+                            alignSelf: 'center'
+                          }}>
                             {(isAdmin || isManager) && (
-                              <button
-                                onClick={() => pinMessage(msg)}
-                                className="btn-icon"
-                                style={{
-                                  fontSize: '12px', padding: '3px 6px',
-                                  color: msg.is_edited ? 'var(--accent-yellow)' : 'var(--text-muted)'
-                                }}
-                                title="Pin message"
-                              >📌</button>
+                              <button onClick={() => pinMessage(msg)} className="btn-icon" style={{
+                                fontSize: '12px', padding: '3px 6px',
+                                color: msg.is_edited ? 'var(--accent-yellow)' : 'var(--text-muted)'
+                              }}>📌</button>
                             )}
                             {isOwn && (
-                              <button
-                                onClick={() => startEdit(msg)}
-                                className="btn-icon"
-                                style={{ fontSize: '12px', padding: '3px 6px' }}
-                                title="Edit"
-                              >✏️</button>
+                              <button onClick={() => startEdit(msg)} className="btn-icon" style={{ fontSize: '12px', padding: '3px 6px' }}>✏️</button>
                             )}
                             {(isOwn || isAdmin) && (
-                              <button
-                                onClick={() => deleteMessage(msg.id)}
-                                className="btn-icon"
-                                style={{ fontSize: '12px', padding: '3px 6px', color: 'var(--accent-red)' }}
-                                title="Delete"
-                              >🗑️</button>
+                              <button onClick={() => deleteMessage(msg.id)} className="btn-icon" style={{ fontSize: '12px', padding: '3px 6px', color: 'var(--accent-red)' }}>🗑️</button>
                             )}
                           </div>
                         </div>
@@ -709,50 +573,33 @@ export default function Messages({ profile }) {
 
             {/* Message Input */}
             <div style={{
-              padding: '12px 20px',
-              borderTop: '1px solid var(--border)',
+              padding: '12px 16px', borderTop: '1px solid var(--border)',
               background: 'var(--bg-secondary)', flexShrink: 0
             }}>
               <div style={{
-                background: 'var(--bg-hover)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px', overflow: 'hidden',
-                transition: 'border-color 0.2s',
-                display: 'flex', alignItems: 'center'
+                background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', overflow: 'hidden'
               }}>
                 <input
                   ref={inputRef}
-                  type="text"
-                  value={newMessage}
+                  type="text" value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder={`Message #${activeChannel.name}...`}
                   style={{
-                    flex: 1, padding: '13px 16px',
-                    background: 'transparent', border: 'none',
-                    color: 'var(--text-primary)', fontSize: '14px',
-                    outline: 'none'
+                    flex: 1, padding: '13px 16px', background: 'transparent',
+                    border: 'none', color: 'var(--text-primary)', fontSize: '14px', outline: 'none'
                   }}
                 />
-                <div style={{ padding: '0 12px', display: 'flex', gap: '4px' }}>
-                  <button
-                    onClick={sendMessage}
-                    disabled={sending || !newMessage.trim()}
-                    style={{
-                      width: '34px', height: '34px',
-                      borderRadius: '8px', border: 'none',
-                      background: sending || !newMessage.trim()
-                        ? 'var(--border)' : 'var(--accent-blue)',
-                      color: sending || !newMessage.trim() ? 'var(--text-muted)' : 'white',
-                      cursor: sending || !newMessage.trim() ? 'not-allowed' : 'pointer',
-                      display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontSize: '14px',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    ➤
-                  </button>
-                </div>
+                <button onClick={sendMessage} disabled={sending || !newMessage.trim()} style={{
+                  width: '38px', height: '38px', margin: '4px 8px 4px 0',
+                  borderRadius: '8px', border: 'none',
+                  background: sending || !newMessage.trim() ? 'var(--border)' : 'var(--accent-blue)',
+                  color: sending || !newMessage.trim() ? 'var(--text-muted)' : 'white',
+                  cursor: sending || !newMessage.trim() ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '16px', transition: 'all 0.2s'
+                }}>➤</button>
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '6px', paddingLeft: '4px' }}>
                 Press <kbd style={{
@@ -766,18 +613,17 @@ export default function Messages({ profile }) {
           <div className="empty-state" style={{ flex: 1 }}>
             <div className="empty-icon">💬</div>
             <div className="empty-title">Select a channel</div>
-            <div className="empty-desc">Choose a channel from the sidebar to start messaging</div>
+            <div className="empty-desc">Choose a channel to start messaging</div>
           </div>
         )}
       </div>
 
-      {/* ===== MEMBERS PANEL ===== */}
+      {/* Members Panel */}
       {showMembers && (
         <div style={{
           width: '220px', background: 'var(--bg-secondary)',
           borderLeft: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column',
-          flexShrink: 0
+          display: 'flex', flexDirection: 'column', flexShrink: 0
         }}>
           <div style={{
             padding: '14px 16px', borderBottom: '1px solid var(--border)',
@@ -786,28 +632,25 @@ export default function Messages({ profile }) {
             <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px' }}>
               Members ({members.length})
             </span>
-            <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ fontSize: '14px' }}>
-              ✕
-            </button>
+            <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ fontSize: '14px' }}>✕</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
-            {['admin', 'manager', 'employee'].map(role => {
+            {['admin', 'manager', 'employee', 'partner'].map(role => {
               const roleMembers = members.filter(m => m.role === role)
               if (!roleMembers.length) return null
               return (
                 <div key={role} style={{ marginBottom: '16px' }}>
                   <div style={{
                     color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700',
-                    textTransform: 'uppercase', letterSpacing: '0.08em',
-                    padding: '4px 8px', marginBottom: '6px'
+                    textTransform: 'uppercase', letterSpacing: '0.08em', padding: '4px 8px', marginBottom: '6px'
                   }}>
                     {role}s — {roleMembers.length}
                   </div>
                   {roleMembers.map(member => (
                     <div key={member.id} style={{
                       display: 'flex', alignItems: 'center', gap: '10px',
-                      padding: '7px 8px', borderRadius: '8px',
-                      transition: 'background 0.15s', cursor: 'pointer'
+                      padding: '7px 8px', borderRadius: '8px', cursor: 'pointer',
+                      transition: 'background 0.15s'
                     }}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -822,8 +665,7 @@ export default function Messages({ profile }) {
                         </div>
                         <div className="status-dot online" style={{
                           position: 'absolute', bottom: '-1px', right: '-1px',
-                          width: '8px', height: '8px',
-                          border: '2px solid var(--bg-secondary)'
+                          width: '8px', height: '8px', border: '2px solid var(--bg-secondary)'
                         }} />
                       </div>
                       <div style={{ overflow: 'hidden' }}>
@@ -833,14 +675,9 @@ export default function Messages({ profile }) {
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
                         }}>
                           {member.full_name}
-                          {member.id === profile.id && (
-                            <span style={{ color: 'var(--text-muted)', fontWeight: '400', fontSize: '11px' }}> you</span>
-                          )}
+                          {member.id === profile.id && <span style={{ color: 'var(--text-muted)', fontWeight: '400', fontSize: '11px' }}> you</span>}
                         </div>
-                        <div style={{
-                          color: roleColor[member.role] || 'var(--text-muted)',
-                          fontSize: '10px', textTransform: 'capitalize'
-                        }}>
+                        <div style={{ color: roleColor[member.role] || 'var(--text-muted)', fontSize: '10px', textTransform: 'capitalize' }}>
                           {member.role}
                         </div>
                       </div>
@@ -857,13 +694,8 @@ export default function Messages({ profile }) {
       {showNewChannel && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '420px' }}>
-            <div style={{
-              padding: '20px 24px', borderBottom: '1px solid var(--border)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-            }}>
-              <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '17px', fontWeight: '700' }}>
-                Create Channel
-              </h3>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '17px', fontWeight: '700' }}>Create Channel</h3>
               <button onClick={() => setShowNewChannel(false)} className="btn-icon">✕</button>
             </div>
             <div style={{ padding: '20px 24px' }}>
@@ -871,32 +703,21 @@ export default function Messages({ profile }) {
                 <label className="input-label">Channel Name</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: 'var(--text-muted)', fontSize: '18px' }}>#</span>
-                  <input
-                    type="text" value={newChannelName}
+                  <input type="text" value={newChannelName}
                     onChange={(e) => setNewChannelName(e.target.value)}
-                    placeholder="e.g. design-team"
-                    className="input"
-                    style={{ flex: 1 }}
-                    onKeyPress={(e) => e.key === 'Enter' && createChannel()}
-                  />
+                    placeholder="e.g. design-team" className="input" style={{ flex: 1 }}
+                    onKeyPress={(e) => e.key === 'Enter' && createChannel()} />
                 </div>
               </div>
               <div style={{ marginBottom: '20px' }}>
                 <label className="input-label">Description (Optional)</label>
-                <input
-                  type="text" value={newChannelDesc}
+                <input type="text" value={newChannelDesc}
                   onChange={(e) => setNewChannelDesc(e.target.value)}
-                  placeholder="What is this channel about?"
-                  className="input"
-                />
+                  placeholder="What is this channel about?" className="input" />
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setShowNewChannel(false)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
-                  Cancel
-                </button>
-                <button onClick={createChannel} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>
-                  Create Channel
-                </button>
+                <button onClick={() => setShowNewChannel(false)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
+                <button onClick={createChannel} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>Create Channel</button>
               </div>
             </div>
           </div>
