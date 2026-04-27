@@ -122,14 +122,22 @@ export default function Attendance({ profile }) {
   }
 
   const fetchSettings = async () => {
-    try {
-      const { data } = await supabase.from('company_settings').select('*').single()
-      if (data) setSettings({
-        work_start_time: data.work_start_time?.slice(0, 5) || '09:00',
-        late_grace_minutes: data.late_grace_minutes || 15
+  try {
+    const { data } = await supabase
+      .from('company_settings')
+      .select('*')
+      .limit(1)  // ← .single() ki jagah .limit(1)
+    
+    if (data && data.length > 0) {
+      setSettings({
+        work_start_time: data[0].work_start_time?.slice(0, 5) || '09:00',
+        late_grace_minutes: data[0].late_grace_minutes || 15
       })
-    } catch (e) {}
+    }
+  } catch (e) {
+    console.error('settings error:', e)
   }
+}
 
   const fetchEmployees = async () => {
     try {
