@@ -23,36 +23,31 @@ export default function App() {
       setLoading(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => { setSession(session) }
+      (_event, session) => setSession(session)
     )
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex', justifyContent: 'center', alignItems: 'center',
-        height: '100vh', background: 'var(--bg-primary)'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '48px', height: '48px', borderRadius: '14px',
-            background: 'var(--gradient-blue)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            fontSize: '24px', margin: '0 auto 16px',
-            animation: 'glow 2s infinite'
-          }}>🏢</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading...</div>
-        </div>
+  if (loading) return (
+    <div style={{
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      height: '100vh', background: '#f5f5f5'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: '52px', height: '52px', borderRadius: '16px',
+          background: 'linear-gradient(135deg, #d71920, #b5151b)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '26px', margin: '0 auto 14px',
+          boxShadow: '0 4px 16px rgba(215,25,32,0.3)',
+          animation: 'redGlow 2s infinite'
+        }}>🏢</div>
+        <div style={{ color: '#888', fontSize: '13px' }}>Loading...</div>
       </div>
-    )
-  }
-
-  return (
-    <div>
-      {!session ? <LoginPage /> : <MainApp session={session} />}
     </div>
   )
+
+  return !session ? <LoginPage /> : <MainApp session={session} />
 }
 
 function LoginPage() {
@@ -60,6 +55,7 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showPass, setShowPass] = useState(false)
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -72,113 +68,187 @@ function LoginPage() {
 
   return (
     <div style={{
-      minHeight: '100vh', background: 'var(--bg-primary)',
-      display: 'flex', fontFamily: 'inherit',
-      position: 'relative', overflow: 'hidden'
+      minHeight: '100vh', display: 'flex',
+      background: 'white', fontFamily: 'inherit'
     }}>
+      {/* Left — Brand Panel */}
       <div style={{
-        position: 'absolute', top: '-20%', left: '-10%',
-        width: '600px', height: '600px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)',
-        pointerEvents: 'none'
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '-20%', right: '-10%',
-        width: '500px', height: '500px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)',
-        pointerEvents: 'none'
-      }} />
-
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', padding: '60px',
-        borderRight: '1px solid var(--border)'
+        flex: 1,
+        background: 'linear-gradient(160deg, #d71920 0%, #8b0000 100%)',
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', alignItems: 'center',
+        padding: '60px', position: 'relative', overflow: 'hidden'
       }}>
-        <div style={{ maxWidth: '480px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px' }}>
-            <div style={{
-              width: '44px', height: '44px', borderRadius: '12px',
-              background: 'var(--gradient-blue)', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', fontSize: '22px'
-            }}>🏢</div>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '18px' }}>
-                Business Manager
-              </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Enterprise Edition</div>
-            </div>
-          </div>
-          <h1 style={{
-            color: 'var(--text-primary)', fontSize: '36px',
-            fontWeight: '800', margin: '0 0 16px', lineHeight: '1.2'
-          }}>
-            Manage your business<br />
-            <span className="gradient-text">smarter & faster</span>
-          </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: '1.7', margin: '0 0 40px' }}>
-            Complete business management — employees, tasks, attendance, payroll, and real-time communication.
-          </p>
+        {/* Background circles */}
+        <div style={{
+          position: 'absolute', top: '-80px', right: '-80px',
+          width: '320px', height: '320px', borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)', pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-60px', left: '-60px',
+          width: '240px', height: '240px', borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)', pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute', top: '40%', left: '10%',
+          width: '120px', height: '120px', borderRadius: '50%',
+          background: 'rgba(255,255,255,0.03)', pointerEvents: 'none'
+        }} />
+
+        {/* Logo */}
+        <div style={{
+          width: '80px', height: '80px', borderRadius: '22px',
+          background: 'rgba(255,255,255,0.15)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '40px', marginBottom: '28px',
+          border: '1px solid rgba(255,255,255,0.2)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          animation: 'redGlow 3s infinite'
+        }}>🏢</div>
+
+        <h1 style={{
+          color: 'white', fontSize: '32px', fontWeight: '800',
+          margin: '0 0 10px', textAlign: 'center', letterSpacing: '-0.5px'
+        }}>
+          Business Manager
+        </h1>
+
+        <p style={{
+          color: 'rgba(255,255,255,0.75)', fontSize: '15px',
+          margin: '0 0 48px', textAlign: 'center', fontWeight: '500'
+        }}>
+          Smart Agency Operations System
+        </p>
+
+        {/* Features */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '320px' }}>
           {[
-            { icon: '👥', text: 'Employee & Role Management' },
-            { icon: '📁', text: 'Projects & Kanban Boards' },
-            { icon: '📅', text: 'Smart Attendance Tracking' },
-            { icon: '💰', text: 'Automated Payroll System' },
+            { icon: '✦', text: 'Projects & Task Management' },
+            { icon: '◷', text: 'Smart Attendance Tracking' },
             { icon: '💬', text: 'Real-time Team Messaging' },
+            { icon: '⏱', text: 'Time & Client Tracking' },
+            { icon: '📊', text: 'Performance Analytics' },
           ].map(f => (
-            <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+            <div key={f.text} style={{
+              display: 'flex', alignItems: 'center', gap: '12px'
+            }}>
               <div style={{
-                width: '32px', height: '32px', borderRadius: '8px',
-                background: 'rgba(59,130,246,0.1)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontSize: '16px'
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: 'rgba(255,255,255,0.15)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontSize: '14px', flexShrink: 0
               }}>{f.icon}</div>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>{f.text}</span>
+              <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '14px', fontWeight: '500' }}>
+                {f.text}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
+      {/* Right — Login Form */}
       <div style={{
-        width: '480px', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', padding: '40px'
+        width: '460px', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', padding: '48px',
+        background: 'white'
       }}>
-        <div style={{ width: '100%', maxWidth: '380px' }}>
-          <h2 style={{ color: 'var(--text-primary)', fontSize: '24px', fontWeight: '700', margin: '0 0 8px' }}>
-            Welcome back 👋
-          </h2>
-          <p style={{ color: 'var(--text-muted)', margin: '0 0 28px', fontSize: '14px' }}>
-            Sign in to your account to continue
-          </p>
+        <div style={{ width: '100%', maxWidth: '360px' }}>
+          <div style={{ marginBottom: '36px' }}>
+            <h2 style={{
+              color: '#111', fontSize: '26px', fontWeight: '800',
+              margin: '0 0 8px', letterSpacing: '-0.5px'
+            }}>
+              Welcome back
+            </h2>
+            <p style={{ color: '#888', margin: 0, fontSize: '14px' }}>
+              Sign in to your account to continue
+            </p>
+          </div>
+
           {error && (
             <div style={{
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-              color: '#fca5a5', padding: '12px 14px', borderRadius: 'var(--radius-md)',
-              marginBottom: '20px', fontSize: '13px', display: 'flex', gap: '8px'
+              background: 'rgba(215,25,32,0.08)',
+              border: '1px solid rgba(215,25,32,0.2)',
+              color: '#d71920', padding: '12px 14px',
+              borderRadius: '10px', marginBottom: '20px',
+              fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center'
             }}>
               <span>⚠️</span> {error}
             </div>
           )}
+
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
               <label className="input-label">Email Address</label>
-              <input type="email" value={email}
+              <input
+                type="email" value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com" required className="input" />
+                placeholder="you@company.com" required
+                className="input"
+                style={{ fontSize: '14px' }}
+              />
             </div>
-            <div style={{ marginBottom: '24px' }}>
+
+            <div style={{ marginBottom: '28px' }}>
               <label className="input-label">Password</label>
-              <input type="password" value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••" required className="input" />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••" required
+                  className="input"
+                  style={{ paddingRight: '44px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(!showPass)}
+                  style={{
+                    position: 'absolute', right: '12px', top: '50%',
+                    transform: 'translateY(-50%)', background: 'none',
+                    border: 'none', cursor: 'pointer', color: '#888',
+                    fontSize: '16px', padding: '4px'
+                  }}
+                >
+                  {showPass ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
-            <button type="submit" disabled={loading} className="btn btn-primary" style={{
-              width: '100%', justifyContent: 'center', padding: '13px',
-              fontSize: '15px', opacity: loading ? 0.7 : 1
-            }}>
-              {loading ? '⟳ Signing in...' : 'Sign In →'}
+
+            <button
+              type="submit" disabled={loading}
+              style={{
+                width: '100%', padding: '13px',
+                background: loading ? '#e5e5e5' : 'linear-gradient(135deg, #d71920, #b5151b)',
+                border: 'none', borderRadius: '10px',
+                color: loading ? '#999' : 'white',
+                fontSize: '15px', fontWeight: '700',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: loading ? 'none' : '0 4px 16px rgba(215,25,32,0.3)',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: '8px'
+              }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              {loading ? (
+                <>
+                  <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+                  Signing in...
+                </>
+              ) : 'Sign In →'}
             </button>
           </form>
-          <p style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', marginTop: '24px' }}>
-            Don't have an account? Contact your administrator
+
+          <p style={{
+            color: '#aaa', fontSize: '12px', textAlign: 'center',
+            marginTop: '24px', lineHeight: '1.6'
+          }}>
+            Don't have an account?<br />
+            Contact your administrator
           </p>
         </div>
       </div>
@@ -271,56 +341,66 @@ function MainApp({ session }) {
   const currentItem = allItems.find(i => i.id === activeTab)
 
   const roleColor = {
-    admin: '#ef4444', manager: '#f59e0b',
-    employee: '#3b82f6', partner: '#8b5cf6', client: '#10b981'
+    admin: '#d71920', manager: '#d97706',
+    employee: '#2563eb', partner: '#7c3aed', client: '#16a34a'
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f5f5f5' }}>
       <div className="skeleton" style={{ width: '200px', height: '20px' }} />
     </div>
   )
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', background: '#f5f5f5', overflow: 'hidden' }}>
 
-      {/* SIDEBAR */}
+      {/* ===== SIDEBAR ===== */}
       <div style={{
         width: sidebarCollapsed ? '64px' : '220px',
-        background: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border)',
+        background: 'white',
+        borderRight: '1px solid #e5e5e5',
         display: 'flex', flexDirection: 'column',
         transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
-        flexShrink: 0, zIndex: 100, overflow: 'hidden'
+        flexShrink: 0, zIndex: 100, overflow: 'hidden',
+        boxShadow: '2px 0 8px rgba(0,0,0,0.04)'
       }}>
+        {/* Logo */}
         <div style={{
-          height: '56px', padding: '0 14px',
+          height: '60px', padding: '0 14px',
           display: 'flex', alignItems: 'center',
-          gap: '10px', borderBottom: '1px solid var(--border)', flexShrink: 0
+          gap: '10px', borderBottom: '1px solid #e5e5e5', flexShrink: 0
         }}>
           <div style={{
-            width: '32px', height: '32px', borderRadius: '9px',
-            background: 'var(--gradient-blue)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            fontSize: '16px', flexShrink: 0
+            width: '34px', height: '34px', borderRadius: '10px',
+            background: 'linear-gradient(135deg, #d71920, #b5151b)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '17px', flexShrink: 0,
+            boxShadow: '0 2px 8px rgba(215,25,32,0.3)'
           }}>🏢</div>
           {!sidebarCollapsed && (
             <div style={{ overflow: 'hidden' }}>
-              <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px', whiteSpace: 'nowrap' }}>
+              <div style={{
+                color: '#111', fontWeight: '800', fontSize: '14px',
+                whiteSpace: 'nowrap', letterSpacing: '-0.3px'
+              }}>
                 Business Manager
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '10px', whiteSpace: 'nowrap' }}>Enterprise</div>
+              <div style={{ color: '#d71920', fontSize: '10px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                Enterprise
+              </div>
             </div>
           )}
         </div>
 
+        {/* Nav */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '10px 8px' }}>
           {filteredNavSections.map(section => (
             <div key={section.title} style={{ marginBottom: '8px' }}>
               {!sidebarCollapsed && (
                 <div style={{
-                  color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700',
-                  textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 8px 4px'
+                  color: '#bbb', fontSize: '10px', fontWeight: '700',
+                  textTransform: 'uppercase', letterSpacing: '0.08em',
+                  padding: '8px 10px 4px'
                 }}>
                   {section.title}
                 </div>
@@ -332,126 +412,156 @@ function MainApp({ session }) {
                   className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
                   style={{
                     justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                    padding: sidebarCollapsed ? '10px' : '10px 12px'
+                    padding: sidebarCollapsed ? '10px' : '9px 12px'
                   }}
                 >
                   <span style={{
                     fontSize: '16px', flexShrink: 0,
-                    color: activeTab === item.id ? 'var(--accent-blue)' : 'var(--text-muted)'
-                  }}>{item.icon}</span>
-                  {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
+                    color: activeTab === item.id ? '#d71920' : '#999'
+                  }}>
+                    {item.icon}
+                  </span>
+                  {!sidebarCollapsed && (
+                    <span style={{ whiteSpace: 'nowrap', fontSize: '13px' }}>
+                      {item.label}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           ))}
         </nav>
 
-        <div style={{ padding: '10px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        {/* Profile + Logout */}
+        <div style={{ padding: '10px 8px', borderTop: '1px solid #e5e5e5', flexShrink: 0 }}>
           {!sidebarCollapsed && profile && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '10px', borderRadius: 'var(--radius-md)',
-              background: 'var(--bg-hover)', marginBottom: '6px', cursor: 'pointer'
-            }} onClick={() => setActiveTab('settings')}>
+              padding: '10px 12px', borderRadius: '10px',
+              background: '#f9f9f9', marginBottom: '6px',
+              cursor: 'pointer', border: '1px solid #e5e5e5',
+              transition: 'all 0.2s'
+            }}
+              onClick={() => setActiveTab('settings')}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0f0f0'}
+              onMouseLeave={e => e.currentTarget.style.background = '#f9f9f9'}
+            >
               <div className="avatar avatar-sm" style={{
-                background: `${roleColor[profile.role] || '#3b82f6'}33`,
-                color: roleColor[profile.role] || '#3b82f6',
-                border: `1px solid ${roleColor[profile.role] || '#3b82f6'}40`,
-                fontSize: '13px'
+                background: `${roleColor[profile.role] || '#d71920'}20`,
+                color: roleColor[profile.role] || '#d71920',
+                border: `1.5px solid ${roleColor[profile.role] || '#d71920'}40`,
+                fontSize: '12px', fontWeight: '800'
               }}>
                 {profile.full_name?.charAt(0).toUpperCase()}
               </div>
               <div style={{ overflow: 'hidden', flex: 1 }}>
                 <div style={{
-                  color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600',
+                  color: '#111', fontSize: '13px', fontWeight: '700',
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                }}>{profile.full_name}</div>
+                }}>
+                  {profile.full_name}
+                </div>
                 <div style={{
-                  color: roleColor[profile.role] || 'var(--text-muted)',
-                  fontSize: '10px', textTransform: 'capitalize'
-                }}>{profile.role}</div>
+                  color: roleColor[profile.role] || '#d71920',
+                  fontSize: '10px', textTransform: 'capitalize', fontWeight: '600'
+                }}>
+                  {profile.role}
+                </div>
               </div>
             </div>
           )}
           <button onClick={handleLogout} className="nav-item" style={{
-            color: 'var(--accent-red)',
+            color: '#d71920',
             justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-            padding: sidebarCollapsed ? '10px' : '10px 12px'
+            padding: sidebarCollapsed ? '10px' : '9px 12px',
+            fontSize: '13px'
           }}>
-            <span style={{ fontSize: '16px' }}>⎋</span>
+            <span style={{ fontSize: '15px' }}>⎋</span>
             {!sidebarCollapsed && <span>Logout</span>}
           </button>
         </div>
       </div>
 
-      {/* MAIN AREA */}
+      {/* ===== MAIN AREA ===== */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        <div className="topbar">
+
+        {/* Topbar */}
+        <div className="topbar" style={{ background: 'white' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="btn-icon">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#888">
                 <rect y="2" width="16" height="1.5" rx="0.75" />
                 <rect y="7.25" width="16" height="1.5" rx="0.75" />
                 <rect y="12.5" width="16" height="1.5" rx="0.75" />
               </svg>
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{currentItem?.icon}</span>
-              <span style={{ color: 'var(--text-primary)', fontSize: '15px', fontWeight: '600' }}>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#d71920', fontSize: '16px' }}>{currentItem?.icon}</span>
+              <span style={{ color: '#111', fontSize: '15px', fontWeight: '700' }}>
                 {currentItem?.label}
               </span>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            <div style={{ color: '#aaa', fontSize: '12px', fontWeight: '500' }}>
+              {new Date().toLocaleDateString('en-US', {
+                weekday: 'short', month: 'short', day: 'numeric'
+              })}
             </div>
 
+            {/* Notification Bell */}
             <div style={{ position: 'relative' }}>
-              <button className="btn-icon" onClick={() => setShowNotifPanel(!showNotifPanel)} style={{ position: 'relative' }}>
+              <button className="btn-icon" onClick={() => setShowNotifPanel(!showNotifPanel)}
+                style={{ position: 'relative', color: '#666' }}>
                 🔔
                 {unreadCount > 0 && (
                   <span style={{
-                    position: 'absolute', top: '0px', right: '0px',
-                    background: 'var(--accent-red)', color: 'white',
+                    position: 'absolute', top: '0', right: '0',
+                    background: '#d71920', color: 'white',
                     borderRadius: '50%', width: '16px', height: '16px',
-                    fontSize: '9px', fontWeight: '700',
+                    fontSize: '9px', fontWeight: '800',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    border: '2px solid var(--bg-secondary)'
+                    border: '2px solid white'
                   }}>
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
 
+              {/* Notif Panel */}
               {showNotifPanel && (
                 <div style={{
-                  position: 'absolute', top: '44px', right: 0,
-                  width: '360px', background: 'var(--bg-card)',
-                  border: '1px solid var(--border)', borderRadius: '14px',
-                  boxShadow: 'var(--shadow-lg)', zIndex: 1000,
-                  overflow: 'hidden', animation: 'bounceIn 0.2s ease'
+                  position: 'absolute', top: '48px', right: 0,
+                  width: '360px', background: 'white',
+                  border: '1px solid #e5e5e5', borderRadius: '16px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 1000,
+                  overflow: 'hidden', animation: 'slideDown 0.2s ease'
                 }}>
                   <div style={{
-                    padding: '14px 16px', borderBottom: '1px solid var(--border)',
+                    padding: '14px 16px', borderBottom: '1px solid #e5e5e5',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
+                      <span style={{ color: '#111', fontWeight: '700', fontSize: '15px' }}>
                         Notifications
                       </span>
                       {unreadCount > 0 && (
                         <span style={{
-                          background: 'var(--accent-red)', color: 'white',
-                          borderRadius: '20px', padding: '1px 7px', fontSize: '11px', fontWeight: '700'
+                          background: '#d71920', color: 'white',
+                          borderRadius: '20px', padding: '1px 7px',
+                          fontSize: '11px', fontWeight: '700'
                         }}>{unreadCount}</span>
                       )}
                     </div>
                     <button onClick={markAllRead} style={{
                       background: 'transparent', border: 'none',
-                      color: 'var(--accent-blue)', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
-                    }}>Mark all read</button>
+                      color: '#d71920', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: '700'
+                    }}>
+                      Mark all read
+                    </button>
                   </div>
                   <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {notifications.length === 0 ? (
@@ -462,35 +572,36 @@ function MainApp({ session }) {
                     ) : (
                       notifications.map(notif => (
                         <div key={notif.id} onClick={() => markAsRead(notif.id)}
-                          className={`notification ${!notif.is_read ? 'unread' : ''}`}
-                          style={{ margin: '6px 8px', borderRadius: '10px' }}>
+                          className={`notification ${!notif.is_read ? 'unread' : ''}`}>
                           <div style={{
                             width: '36px', height: '36px', borderRadius: '10px',
-                            background: notif.is_read ? 'var(--bg-hover)' : 'rgba(59,130,246,0.15)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '18px', flexShrink: 0
+                            background: notif.is_read ? '#f5f5f5' : 'rgba(215,25,32,0.08)',
+                            display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', fontSize: '18px', flexShrink: 0
                           }}>
                             {notificationIcon(notif.type)}
                           </div>
                           <div style={{ flex: 1, overflow: 'hidden' }}>
                             <div style={{
-                              color: 'var(--text-primary)', fontSize: '13px',
-                              fontWeight: notif.is_read ? '400' : '600', marginBottom: '2px'
+                              color: '#111', fontSize: '13px',
+                              fontWeight: notif.is_read ? '400' : '700', marginBottom: '2px'
                             }}>{notif.title}</div>
                             {notif.body && (
                               <div style={{
-                                color: 'var(--text-muted)', fontSize: '12px',
+                                color: '#888', fontSize: '12px',
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                               }}>{notif.body}</div>
                             )}
-                            <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>
-                              {new Date(notif.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            <div style={{ color: '#bbb', fontSize: '11px', marginTop: '3px' }}>
+                              {new Date(notif.created_at).toLocaleTimeString('en-US', {
+                                hour: '2-digit', minute: '2-digit'
+                              })}
                             </div>
                           </div>
                           {!notif.is_read && (
                             <div style={{
                               width: '8px', height: '8px', borderRadius: '50%',
-                              background: 'var(--accent-blue)', flexShrink: 0
+                              background: '#d71920', flexShrink: 0
                             }} />
                           )}
                         </div>
@@ -501,8 +612,18 @@ function MainApp({ session }) {
               )}
             </div>
 
-            <div className="avatar avatar-sm" style={{ cursor: 'pointer' }}
-              onClick={() => setActiveTab('settings')}>
+            {/* Profile Avatar */}
+            <div
+              className="avatar avatar-sm"
+              style={{
+                cursor: 'pointer',
+                background: `${roleColor[profile?.role] || '#d71920'}20`,
+                color: roleColor[profile?.role] || '#d71920',
+                border: `1.5px solid ${roleColor[profile?.role] || '#d71920'}40`,
+                fontSize: '12px', fontWeight: '800'
+              }}
+              onClick={() => setActiveTab('settings')}
+            >
               {profile?.full_name?.charAt(0).toUpperCase()}
             </div>
           </div>
@@ -511,7 +632,7 @@ function MainApp({ session }) {
         {/* Page Content */}
         <div style={{ flex: 1, overflow: 'auto', padding: '24px' }} className="fade-in">
           {!canAccess(activeTab) ? (
-            <div className="empty-state" style={{ height: '60%' }}>
+            <div className="empty-state card" style={{ height: '60%' }}>
               <div className="empty-icon">🔒</div>
               <div className="empty-title">Access Restricted</div>
               <div className="empty-desc">You don't have permission to view this module</div>
@@ -533,55 +654,63 @@ function MainApp({ session }) {
         </div>
       </div>
 
-      {/* SECRET ADMIN PANEL */}
+      {/* ===== SECRET ADMIN PANEL ===== */}
       {showAdminPanel && profile?.role === 'admin' && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
           zIndex: 9999, display: 'flex', justifyContent: 'center',
-          alignItems: 'center', padding: '20px', backdropFilter: 'blur(8px)'
+          alignItems: 'center', padding: '20px', backdropFilter: 'blur(6px)'
         }} onClick={() => setShowAdminPanel(false)}>
           <div style={{
-            background: 'var(--bg-card)', borderRadius: '20px',
+            background: 'white', borderRadius: '20px',
             width: '100%', maxWidth: '680px', maxHeight: '88vh',
-            overflowY: 'auto', border: '1px solid var(--border)',
-            animation: 'bounceIn 0.3s ease'
+            overflowY: 'auto', border: '1px solid #e5e5e5',
+            animation: 'bounceIn 0.3s ease',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.15)'
           }} onClick={e => e.stopPropagation()}>
 
             <div style={{
-              padding: '20px 24px', borderBottom: '1px solid var(--border)',
-              background: 'linear-gradient(135deg, #0d1f3c, #1a1040)',
+              padding: '20px 24px', borderBottom: '1px solid #e5e5e5',
+              background: 'linear-gradient(135deg, #d71920, #8b0000)',
               borderRadius: '20px 20px 0 0',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
               <div>
-                <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '700' }}>
+                <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '800' }}>
                   Visibility Control
                 </h2>
-                <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: '12px' }}>
+                <p style={{ color: 'rgba(255,255,255,0.7)', margin: '4px 0 0', fontSize: '12px' }}>
                   Ctrl+Shift+A to open/close
                 </p>
               </div>
-              <button onClick={() => setShowAdminPanel(false)} className="btn-icon" style={{ color: 'white' }}>✕</button>
+              <button onClick={() => setShowAdminPanel(false)} style={{
+                background: 'rgba(255,255,255,0.2)', border: 'none',
+                borderRadius: '8px', color: 'white', cursor: 'pointer',
+                width: '32px', height: '32px', fontSize: '16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>✕</button>
             </div>
 
             <div style={{ padding: '24px' }}>
+              {/* My Sidebar */}
               <div style={{
-                background: 'var(--bg-hover)', borderRadius: '12px',
-                padding: '16px', marginBottom: '20px', border: '1px solid var(--border)'
+                background: '#f9f9f9', borderRadius: '12px',
+                padding: '16px', marginBottom: '20px',
+                border: '1px solid #e5e5e5'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
-                    <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px' }}>
+                    <div style={{ color: '#111', fontWeight: '700', fontSize: '14px' }}>
                       My Sidebar
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
+                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
                       Toggle what YOU see — perfect for screen sharing
                     </div>
                   </div>
                   <button onClick={showAllModules} style={{
-                    background: 'var(--bg-card)', border: '1px solid var(--border)',
+                    background: 'white', border: '1px solid #e5e5e5',
                     borderRadius: '6px', padding: '5px 12px',
-                    color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px'
+                    color: '#666', cursor: 'pointer', fontSize: '11px', fontWeight: '600'
                   }}>Reset All</button>
                 </div>
                 <div style={{
@@ -606,23 +735,23 @@ function MainApp({ session }) {
                       <div key={mod.id} onClick={() => toggleAdminModule(mod.id)} style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
-                        background: isOn ? 'rgba(59,130,246,0.1)' : 'var(--bg-card)',
-                        border: `1px solid ${isOn ? 'rgba(59,130,246,0.3)' : 'var(--border)'}`,
+                        background: isOn ? 'rgba(215,25,32,0.06)' : 'white',
+                        border: `1px solid ${isOn ? 'rgba(215,25,32,0.2)' : '#e5e5e5'}`,
                         transition: 'all 0.2s'
                       }}>
-                        <span style={{ fontSize: '13px', color: isOn ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '13px', color: isOn ? '#111' : '#999' }}>
                           {mod.icon} {mod.label}
                         </span>
                         <div style={{
                           width: '36px', height: '20px', borderRadius: '10px',
-                          background: isOn ? 'var(--accent-blue)' : 'var(--border)',
+                          background: isOn ? '#d71920' : '#e5e5e5',
                           position: 'relative', flexShrink: 0, transition: 'background 0.2s'
                         }}>
                           <div style={{
                             width: '14px', height: '14px', borderRadius: '50%',
                             background: 'white', position: 'absolute', top: '3px',
-                            left: isOn ? '19px' : '3px',
-                            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                            left: isOn ? '19px' : '3px', transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                           }} />
                         </div>
                       </div>
@@ -631,8 +760,9 @@ function MainApp({ session }) {
                 </div>
               </div>
 
+              {/* Partner & Employee */}
               <div style={{
-                color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
+                color: '#bbb', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
               }}>
                 Partner & Employee Permissions
@@ -640,17 +770,17 @@ function MainApp({ session }) {
 
               {['partner', 'employee'].map(role => (
                 <div key={role} style={{
-                  background: 'var(--bg-hover)', borderRadius: '12px',
-                  padding: '16px', marginBottom: '12px', border: '1px solid var(--border)'
+                  background: '#f9f9f9', borderRadius: '12px',
+                  padding: '16px', marginBottom: '12px', border: '1px solid #e5e5e5'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                     <span style={{
-                      background: `${{ partner: '#8b5cf6', employee: '#3b82f6' }[role]}22`,
-                      color: { partner: '#8b5cf6', employee: '#3b82f6' }[role],
+                      background: `${{ partner: '#7c3aed', employee: '#2563eb' }[role]}15`,
+                      color: { partner: '#7c3aed', employee: '#2563eb' }[role],
                       padding: '3px 10px', borderRadius: '20px',
                       fontSize: '12px', fontWeight: '700', textTransform: 'capitalize'
                     }}>{role}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>can see these modules</span>
+                    <span style={{ color: '#888', fontSize: '12px' }}>can see these modules</span>
                   </div>
                   <div style={{
                     display: 'grid',
@@ -707,24 +837,24 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      background: enabled ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+      background: enabled ? 'rgba(215,25,32,0.05)' : 'white',
       borderRadius: '8px', padding: '8px 10px',
-      border: `1px solid ${enabled ? 'rgba(59,130,246,0.25)' : 'var(--border)'}`,
-      transition: 'all 0.2s'
-    }}>
-      <span style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: '12px' }}>
+      border: `1px solid ${enabled ? 'rgba(215,25,32,0.15)' : '#e5e5e5'}`,
+      transition: 'all 0.2s', cursor: 'pointer'
+    }} onClick={handleToggle}>
+      <span style={{ color: enabled ? '#111' : '#999', fontSize: '12px' }}>
         {moduleLabels[moduleId] || moduleId}
       </span>
-      <div onClick={handleToggle} style={{
+      <div style={{
         width: '36px', height: '20px', borderRadius: '10px',
-        background: enabled ? 'var(--accent-blue)' : 'var(--border)',
-        cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0
+        background: enabled ? '#d71920' : '#e5e5e5',
+        position: 'relative', flexShrink: 0, transition: 'background 0.2s'
       }}>
         <div style={{
           width: '14px', height: '14px', borderRadius: '50%',
           background: 'white', position: 'absolute', top: '3px',
-          left: enabled ? '19px' : '3px',
-          transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+          left: enabled ? '19px' : '3px', transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
         }} />
       </div>
     </div>
