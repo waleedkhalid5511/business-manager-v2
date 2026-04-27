@@ -6,13 +6,24 @@ export function useNotifications(profile) {
   const [unreadCount, setUnreadCount] = useState(0)
 
   useEffect(() => {
-    if (!profile) return
+    if (!profile?.id) return
     fetchNotifications()
 
     const sub = supabase
-      .channel(`notifications-${profile.id}`)
+      .channel(`notif-${profile.id}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'notifications',
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${profile.id}`
+      }, (payload) => {
+        setNotifications(prev => [payload.new, ...prev])
+        setUnreadCount(prev => prev + 1)
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'notifications',
         filter: `user_id=eq.${profile.id}`
       }, () => fetchNotifications())
       .subscribe()
@@ -21,15 +32,16 @@ export function useNotifications(profile) {
   }, [profile?.id])
 
   const fetchNotifications = async () => {
-    if (!profile) return
+    if (!profile?.id) return
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', profile.id)
         .order('created_at', { ascending: false })
         .limit(50)
 
+      if (error) { console.error('notif error:', error); return }
       setNotifications(data || [])
       setUnreadCount((data || []).filter(n => !n.is_read).length)
     } catch (e) {
@@ -38,7 +50,8 @@ export function useNotifications(profile) {
   }
 
   const markAsRead = async (id) => {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id)
+    await supabase.from('notifications')
+      .update({ is_read: true }).eq('id', id)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
