@@ -11,6 +11,7 @@ import Messages from './pages/Messages'
 import Settings from './pages/Settings'
 import Projects from './pages/Projects'
 import TimeTracking from './pages/TimeTracking'
+import ClientTimeTracking from './pages/ClientTimeTracking'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -243,6 +244,7 @@ function MainApp({ session }) {
         { id: 'tasks', icon: '✦', label: 'Tasks' },
         { id: 'attendance', icon: '◷', label: 'Attendance' },
         { id: 'timetracking', icon: '⏱', label: 'Time Logs' },
+        { id: 'clienttime', icon: '👤', label: 'Client Time' },
       ]
     },
     {
@@ -436,7 +438,9 @@ function MainApp({ session }) {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>Notifications</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
+                        Notifications
+                      </span>
                       {unreadCount > 0 && (
                         <span style={{
                           background: 'var(--accent-red)', color: 'white',
@@ -522,6 +526,7 @@ function MainApp({ session }) {
               {activeTab === 'payroll' && <Payroll profile={profile} />}
               {activeTab === 'messages' && <Messages profile={profile} />}
               {activeTab === 'timetracking' && <TimeTracking profile={profile} />}
+              {activeTab === 'clienttime' && <ClientTimeTracking profile={profile} />}
               {activeTab === 'settings' && <Settings profile={profile} />}
             </>
           )}
@@ -560,7 +565,6 @@ function MainApp({ session }) {
             </div>
 
             <div style={{ padding: '24px' }}>
-              {/* My Sidebar */}
               <div style={{
                 background: 'var(--bg-hover)', borderRadius: '12px',
                 padding: '16px', marginBottom: '20px', border: '1px solid var(--border)'
@@ -592,6 +596,7 @@ function MainApp({ session }) {
                     { id: 'tasks', icon: '✅', label: 'Tasks' },
                     { id: 'attendance', icon: '📅', label: 'Attendance' },
                     { id: 'timetracking', icon: '⏱️', label: 'Time Logs' },
+                    { id: 'clienttime', icon: '👤', label: 'Client Time' },
                     { id: 'employees', icon: '👥', label: 'People' },
                     { id: 'payroll', icon: '💰', label: 'Payroll' },
                     { id: 'settings', icon: '⚙️', label: 'Settings' },
@@ -626,7 +631,6 @@ function MainApp({ session }) {
                 </div>
               </div>
 
-              {/* Partner & Employee */}
               <div style={{
                 color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
                 textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px'
@@ -653,7 +657,7 @@ function MainApp({ session }) {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))',
                     gap: '8px'
                   }}>
-                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'timetracking', 'employees', 'payroll', 'settings'].map(moduleId => (
+                    {['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'timetracking', 'clienttime', 'employees', 'payroll', 'settings'].map(moduleId => (
                       <ModuleToggle
                         key={`${moduleId}-${role}`}
                         moduleId={moduleId}
@@ -697,6 +701,7 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
     attendance: '📅 Attendance', employees: '👥 People',
     payroll: '💰 Payroll', files: '📁 Files',
     settings: '⚙️ Settings', timetracking: '⏱️ Time Logs',
+    clienttime: '👤 Client Time',
   }
 
   return (
