@@ -7,26 +7,22 @@ export function useNotifications(profile) {
 
   useEffect(() => {
     if (!profile?.id) return
+    console.log('🔔 Fetching notifications for:', profile.id)
     fetchNotifications()
 
     const sub = supabase
-      .channel(`notif-${profile.id}`)
+      .channel(`notif-live-${profile.id}`)
       .on('postgres_changes', {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'notifications',
-        filter: `user_id=eq.${profile.id}`
       }, (payload) => {
-        setNotifications(prev => [payload.new, ...prev])
-        setUnreadCount(prev => prev + 1)
+        console.log('🔔 Realtime notif:', payload)
+        fetchNotifications()
       })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${profile.id}`
-      }, () => fetchNotifications())
-      .subscribe()
+      .subscribe((status) => {
+        console.log('🔔 Notif subscription status:', status)
+      })
 
     return () => sub.unsubscribe()
   }, [profile?.id])
@@ -34,14 +30,14 @@ export function useNotifications(profile) {
   const fetchNotifications = async () => {
     if (!profile?.id) return
     try {
+      console.log('🔔 Fetching for user:', profile.id)
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('user_id', profile.id)
         .order('created_at', { ascending: false })
         .limit(50)
 
-      if (error) { console.error('notif error:', error); return }
+      console.log('🔔 Notifications data:', data, 'Error:', error)
       setNotifications(data || [])
       setUnreadCount((data || []).filter(n => !n.is_read).length)
     } catch (e) {
@@ -50,8 +46,7 @@ export function useNotifications(profile) {
   }
 
   const markAsRead = async (id) => {
-    await supabase.from('notifications')
-      .update({ is_read: true }).eq('id', id)
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
     setUnreadCount(prev => Math.max(0, prev - 1))
   }
