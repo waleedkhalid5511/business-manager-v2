@@ -1,417 +1,491 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
+const ROLES = [
+  { id: 'admin', label: 'Admin', color: '#d71920' },
+  { id: 'manager', label: 'Manager', color: '#d97706' },
+  { id: 'employee', label: 'Employee', color: '#2563eb' },
+  { id: 'partner', label: 'Partner', color: '#7c3aed' },
+  { id: 'junior_editor', label: 'Junior Editor', color: '#0891b2' },
+  { id: 'senior_editor', label: 'Senior Editor', color: '#059669' },
+  { id: 'client_manager', label: 'Client Manager', color: '#d97706' },
+  { id: 'qa_reviewer', label: 'QA Reviewer', color: '#7c3aed' },
+]
+
+const DEPARTMENTS = [
+  'Video Editing', 'Motion Graphics', 'Content Creation',
+  'Client Management', 'Quality Assurance', 'Management', 'Other'
+]
+
 export default function Employees({ profile }) {
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [showProfile, setShowProfile] = useState(null)
-  const [message, setMessage] = useState('')
-  const [editEmp, setEditEmp] = useState(null)
   const [search, setSearch] = useState('')
-  const [filterDept, setFilterDept] = useState('all')
   const [filterRole, setFilterRole] = useState('all')
+  const [filterDept, setFilterDept] = useState('all')
+  const [showModal, setShowModal] = useState(false)
+  const [showDetail, setShowDetail] = useState(null)
+  const [editEmployee, setEditEmployee] = useState(null)
+  const [message, setMessage] = useState('')
+  const [taskStats, setTaskStats] = useState({})
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '',
-    role: 'employee', department: '',
-    designation: '', base_salary: '',
-    joining_date: new Date().toISOString().split('T')[0],
-    avatar_url: ''
+    department: '', designation: '', role: 'employee',
+    base_salary: '', join_date: '', password: ''
   })
 
   const isAdmin = profile?.role === 'admin'
   const isManager = profile?.role === 'manager'
 
-  useEffect(() => { fetchEmployees() }, [])
+  useEffect(() => {
+    if (!profile) return
+    fetchEmployees()
+
+    // ⚡ Realtime
+    const sub = supabase
+      .channel(`employees-live-${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchEmployees())
+      .subscribe()
+
+    return () => sub.unsubscribe()
+  }, [profile, filterRole, filterDept])
+
+  useEffect(() => {
+    if (message) {
+      const t = setTimeout(() => setMessage(''), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [message])
 
   const fetchEmployees = async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setEmployees(data || [])
-    setLoading(false)
+    try {
+      let query = supabase.from('profiles').select('*').order('created_at', { ascending: false })
+      if (filterRole !== 'all') query = query.eq('role', filterRole)
+      if (filterDept !== 'all') query = query.eq('department', filterDept)
+
+      const { data, error } = await query
+      if (error) throw error
+      setEmployees(data || [])
+
+      // Fetch task stats per employee
+      if (data && data.length > 0) {
+        const { data: tasks } = await supabase
+          .from('tasks').select('assigned_to, status')
+        if (tasks) {
+          const stats = {}
+          data.forEach(emp => {
+            const empTasks = tasks.filter(t => t.assigned_to === emp.id)
+            stats[emp.id] = {
+              total: empTasks.length,
+              done: empTasks.filter(t => t.status === 'done').length,
+              inProgress: empTasks.filter(t => t.status === 'in_progress').length,
+            }
+          })
+          setTaskStats(stats)
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleSubmit = async () => {
     if (!form.full_name || !form.email) {
-      setMessage('❌ Name aur Email zaroori hain!')
+      setMessage('❌ Name and email required!')
       return
     }
-    if (editEmp) {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: form.full_name,
-          phone: form.phone,
-          role: form.role,
-          department: form.department,
-          designation: form.designation,
-          base_salary: parseFloat(form.base_salary) || 0,
-          joining_date: form.joining_date,
-          avatar_url: form.avatar_url
-        })
-        .eq('id', editEmp.id)
-      if (error) setMessage('❌ ' + error.message)
-      else { setMessage('✅ Update ho gaya!'); fetchEmployees(); closeModal() }
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email: form.email,
-        password: 'TempPass123!',
-        options: { data: { full_name: form.full_name, role: form.role } }
-      })
-      if (error) setMessage('❌ ' + error.message)
-      else { setMessage('✅ Employee add ho gaya!'); fetchEmployees(); closeModal() }
+
+    try {
+      if (editEmployee) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            full_name: form.full_name,
+            phone: form.phone,
+            department: form.department,
+            designation: form.designation,
+            role: form.role,
+            base_salary: parseFloat(form.base_salary) || 0,
+          })
+          .eq('id', editEmployee.id)
+        if (error) throw error
+        setMessage('✅ Employee updated!')
+      } else {
+        // Create auth user
+        const { data: authData, error: authError } = await supabase.auth.admin
+          ? await supabase.auth.signUp({
+              email: form.email,
+              password: form.password || 'TempPass123!',
+            })
+          : { data: null, error: { message: 'Use Supabase dashboard to create users' } }
+
+        if (authError) {
+          setMessage('ℹ️ Create user from Supabase Auth dashboard, then edit here')
+          closeModal()
+          return
+        }
+
+        if (authData?.user) {
+          await supabase.from('profiles').upsert({
+            id: authData.user.id,
+            full_name: form.full_name,
+            email: form.email,
+            phone: form.phone,
+            department: form.department,
+            designation: form.designation,
+            role: form.role,
+            base_salary: parseFloat(form.base_salary) || 0,
+            is_active: true,
+          })
+          setMessage('✅ Employee added!')
+        }
+      }
+      fetchEmployees()
+      closeModal()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
     }
   }
 
   const toggleActive = async (emp) => {
-    await supabase.from('profiles').update({ is_active: !emp.is_active }).eq('id', emp.id)
-    fetchEmployees()
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_active: !emp.is_active })
+      .eq('id', emp.id)
+    if (!error) {
+      setMessage(`✅ ${emp.full_name} ${!emp.is_active ? 'activated' : 'deactivated'}!`)
+      fetchEmployees()
+      if (showDetail?.id === emp.id) setShowDetail(prev => ({ ...prev, is_active: !emp.is_active }))
+    }
   }
 
   const openEdit = (emp) => {
-    setEditEmp(emp)
+    setEditEmployee(emp)
     setForm({
-      full_name: emp.full_name, email: emp.email,
-      phone: emp.phone || '', role: emp.role,
+      full_name: emp.full_name || '',
+      email: emp.email || '',
+      phone: emp.phone || '',
       department: emp.department || '',
       designation: emp.designation || '',
+      role: emp.role || 'employee',
       base_salary: emp.base_salary || '',
-      joining_date: emp.joining_date || '',
-      avatar_url: emp.avatar_url || ''
+      join_date: emp.join_date || '',
+      password: ''
     })
     setShowModal(true)
   }
 
   const closeModal = () => {
-    setShowModal(false); setEditEmp(null)
-    setForm({
-      full_name: '', email: '', phone: '',
-      role: 'employee', department: '',
-      designation: '', base_salary: '',
-      joining_date: new Date().toISOString().split('T')[0],
-      avatar_url: ''
-    })
+    setShowModal(false)
+    setEditEmployee(null)
+    setForm({ full_name: '', email: '', phone: '', department: '', designation: '', role: 'employee', base_salary: '', join_date: '', password: '' })
     setMessage('')
   }
 
-  const roleColor = (role) => {
-    if (role === 'admin') return '#ef4444'
-    if (role === 'manager') return '#f59e0b'
-    return '#3b82f6'
-  }
-
-  const departments = [...new Set(employees.map(e => e.department).filter(Boolean))]
+  const getRoleConfig = (role) => ROLES.find(r => r.id === role) || { label: role, color: '#888' }
 
   const filtered = employees.filter(emp => {
-    const matchSearch = emp.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+    if (!search) return true
+    return emp.full_name?.toLowerCase().includes(search.toLowerCase()) ||
       emp.email?.toLowerCase().includes(search.toLowerCase()) ||
+      emp.department?.toLowerCase().includes(search.toLowerCase()) ||
       emp.designation?.toLowerCase().includes(search.toLowerCase())
-    const matchDept = filterDept === 'all' || emp.department === filterDept
-    const matchRole = filterRole === 'all' || emp.role === filterRole
-    return matchSearch && matchDept && matchRole
   })
 
-  const getJoiningDuration = (date) => {
-    if (!date) return ''
-    const months = Math.floor((new Date() - new Date(date)) / (1000 * 60 * 60 * 24 * 30))
-    if (months < 1) return 'New'
-    if (months < 12) return `${months}m`
-    return `${Math.floor(months / 12)}y ${months % 12}m`
-  }
+  const activeCount = employees.filter(e => e.is_active).length
+  const deptGroups = [...new Set(employees.map(e => e.department).filter(Boolean))]
 
   return (
-    <div>
+    <div className="fade-in">
       {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '20px',
-        flexWrap: 'wrap', gap: '12px'
-      }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ color: 'white', margin: '0 0 4px', fontSize: '22px' }}>👥 Employees</h2>
-          <p style={{ color: '#94a3b8', margin: 0, fontSize: '13px' }}>
-            {filtered.length} / {employees.length} employees
+          <h2 style={{ color: '#111', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>People</h2>
+          <p style={{ color: '#888', margin: 0, fontSize: '13px' }}>
+            {activeCount} active · {employees.length} total
           </p>
         </div>
-        {(isAdmin || isManager) && (
-          <button onClick={() => setShowModal(true)} style={{
-            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-            border: 'none', borderRadius: '10px', padding: '10px 20px',
-            color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-          }}>
-            + Employee Add Karo
+        {isAdmin && (
+          <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
+            + Add Member
           </button>
         )}
       </div>
 
-      {/* Search + Filters */}
-      <div style={{
-        display: 'flex', gap: '10px', marginBottom: '20px',
-        flexWrap: 'wrap'
-      }}>
-        <input
-          type="text" placeholder="🔍 Search naam, email, designation..."
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{
-            flex: 1, minWidth: '200px', padding: '10px 14px',
-            background: '#1e293b', border: '1px solid #334155',
-            borderRadius: '8px', color: 'white', fontSize: '13px', outline: 'none'
-          }}
-        />
-        <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
-          style={{
-            padding: '10px 12px', background: '#1e293b',
-            border: '1px solid #334155', borderRadius: '8px',
-            color: 'white', fontSize: '13px', outline: 'none'
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+        {ROLES.filter(r => employees.some(e => e.role === r.id)).map(role => (
+          <div key={role.id} style={{
+            background: 'white', borderRadius: '10px', padding: '14px',
+            textAlign: 'center', border: `1px solid ${role.color}22`,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
           }}>
-          <option value="all">All Departments</option>
-          {departments.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}
-          style={{
-            padding: '10px 12px', background: '#1e293b',
-            border: '1px solid #334155', borderRadius: '8px',
-            color: 'white', fontSize: '13px', outline: 'none'
-          }}>
-          <option value="all">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="manager">Manager</option>
-          <option value="employee">Employee</option>
-        </select>
-      </div>
-
-      {/* Stats Row */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: '12px', marginBottom: '20px'
-      }}>
-        {[
-          { label: 'Total', value: employees.length, color: '#3b82f6' },
-          { label: 'Active', value: employees.filter(e => e.is_active).length, color: '#10b981' },
-          { label: 'Admins', value: employees.filter(e => e.role === 'admin').length, color: '#ef4444' },
-          { label: 'Managers', value: employees.filter(e => e.role === 'manager').length, color: '#f59e0b' },
-          { label: 'Employees', value: employees.filter(e => e.role === 'employee').length, color: '#8b5cf6' },
-        ].map(stat => (
-          <div key={stat.label} style={{
-            background: '#1e293b', borderRadius: '10px',
-            padding: '14px', textAlign: 'center',
-            border: `1px solid ${stat.color}33`
-          }}>
-            <div style={{ color: stat.color, fontSize: '22px', fontWeight: 'bold' }}>
-              {stat.value}
+            <div style={{ color: role.color, fontSize: '20px', fontWeight: '800' }}>
+              {employees.filter(e => e.role === role.id).length}
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '12px' }}>{stat.label}</div>
+            <div style={{ color: '#888', fontSize: '11px', marginTop: '2px' }}>{role.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Employee Cards */}
-      {loading ? (
-        <div style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>Loading...</div>
-      ) : filtered.length === 0 ? (
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <input type="text" placeholder="🔍 Search name, email, role..."
+          value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1, minWidth: '200px', padding: '8px 14px',
+            background: 'white', border: '1px solid #e5e5e5',
+            borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none'
+          }}
+        />
+        <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}
+          style={{ padding: '8px 12px', background: 'white', border: '1px solid #e5e5e5', borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none' }}>
+          <option value="all">All Roles</option>
+          {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+        </select>
+        <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}
+          style={{ padding: '8px 12px', background: 'white', border: '1px solid #e5e5e5', borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none' }}>
+          <option value="all">All Departments</option>
+          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+      </div>
+
+      {/* Message */}
+      {message && (
         <div style={{
-          background: '#1e293b', borderRadius: '12px',
-          padding: '40px', textAlign: 'center', color: '#94a3b8'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
-          <p>Koi employee nahi mila!</p>
+          background: message.includes('❌') ? 'rgba(215,25,32,0.08)' : 'rgba(22,163,74,0.08)',
+          border: `1px solid ${message.includes('❌') ? 'rgba(215,25,32,0.2)' : 'rgba(22,163,74,0.2)'}`,
+          color: message.includes('❌') ? '#d71920' : '#16a34a',
+          padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px'
+        }}>{message}</div>
+      )}
+
+      {/* Employee Grid */}
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+          {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: '160px', borderRadius: '12px' }} />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state card">
+          <div className="empty-icon">👥</div>
+          <div className="empty-title">No members found</div>
+          <div className="empty-desc">Add team members to get started</div>
         </div>
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px'
-        }}>
-          {filtered.map(emp => (
-            <div key={emp.id} style={{
-              background: '#1e293b', borderRadius: '12px',
-              padding: '20px', border: '1px solid #334155',
-              opacity: emp.is_active ? 1 : 0.6,
-              cursor: 'pointer'
-            }}
-              onClick={() => setShowProfile(emp)}
-            >
-              {/* Avatar + Name */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <div style={{
-                  width: '52px', height: '52px', borderRadius: '50%',
-                  background: emp.avatar_url ? 'transparent' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontWeight: 'bold', fontSize: '20px',
-                  flexShrink: 0, overflow: 'hidden',
-                  border: '2px solid #334155'
-                }}>
-                  {emp.avatar_url
-                    ? <img src={emp.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : emp.full_name?.charAt(0).toUpperCase()
-                  }
-                </div>
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ color: 'white', fontWeight: 'bold', fontSize: '15px' }}>
-                    {emp.full_name}
-                  </div>
-                  <div style={{ color: '#94a3b8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {emp.designation || emp.email}
-                  </div>
-                </div>
-                {!emp.is_active && (
-                  <span style={{
-                    background: '#7f1d1d', color: '#fca5a5',
-                    padding: '2px 8px', borderRadius: '20px', fontSize: '10px'
-                  }}>Inactive</span>
-                )}
-              </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+          {filtered.map(emp => {
+            const roleConfig = getRoleConfig(emp.role)
+            const stats = taskStats[emp.id] || { total: 0, done: 0, inProgress: 0 }
+            const completionRate = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0
 
-              {/* Details */}
-              <div style={{ marginBottom: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>Role</span>
-                  <span style={{
-                    background: roleColor(emp.role) + '22',
-                    color: roleColor(emp.role),
-                    padding: '2px 10px', borderRadius: '20px',
-                    fontSize: '11px', fontWeight: 'bold', textTransform: 'capitalize'
-                  }}>{emp.role}</span>
-                </div>
-                {emp.department && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Department</span>
-                    <span style={{ color: 'white', fontSize: '12px' }}>{emp.department}</span>
-                  </div>
-                )}
-                {emp.phone && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Phone</span>
-                    <span style={{ color: 'white', fontSize: '12px' }}>{emp.phone}</span>
-                  </div>
-                )}
-                {emp.joining_date && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Experience</span>
-                    <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 'bold' }}>
-                      {getJoiningDuration(emp.joining_date)}
-                    </span>
-                  </div>
-                )}
-                {isAdmin && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Salary</span>
-                    <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 'bold' }}>
-                      PKR {Number(emp.base_salary || 0).toLocaleString()}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Actions */}
-              {(isAdmin || isManager) && (
-                <div style={{ display: 'flex', gap: '8px' }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button onClick={() => openEdit(emp)} style={{
-                    flex: 1, padding: '8px', background: '#334155',
-                    border: 'none', borderRadius: '8px',
-                    color: 'white', cursor: 'pointer', fontSize: '12px'
-                  }}>✏️ Edit</button>
-                  {isAdmin && (
-                    <button onClick={() => toggleActive(emp)} style={{
-                      flex: 1, padding: '8px',
-                      background: emp.is_active ? '#7f1d1d' : '#14532d',
-                      border: 'none', borderRadius: '8px',
-                      color: emp.is_active ? '#fca5a5' : '#86efac',
-                      cursor: 'pointer', fontSize: '12px'
+            return (
+              <div key={emp.id}
+                className="card card-clickable"
+                onClick={() => setShowDetail(emp)}
+                style={{
+                  opacity: emp.is_active ? 1 : 0.6,
+                  borderTop: `3px solid ${roleConfig.color}`
+                }}
+              >
+                {/* Top */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="avatar avatar-lg" style={{
+                      background: `${roleConfig.color}18`,
+                      color: roleConfig.color,
+                      border: `2px solid ${roleConfig.color}30`,
+                      fontSize: '20px', fontWeight: '800'
                     }}>
-                      {emp.is_active ? '🚫 Deactivate' : '✅ Activate'}
-                    </button>
+                      {emp.full_name?.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ color: '#111', fontWeight: '800', fontSize: '15px' }}>
+                        {emp.full_name}
+                      </div>
+                      <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
+                        {emp.designation || emp.department || 'No designation'}
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    background: `${roleConfig.color}12`,
+                    color: roleConfig.color,
+                    padding: '3px 10px', borderRadius: '20px',
+                    fontSize: '11px', fontWeight: '700', flexShrink: 0
+                  }}>
+                    {roleConfig.label}
+                  </span>
+                </div>
+
+                {/* Task Stats */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  {[
+                    { label: 'Tasks', value: stats.total, color: '#888' },
+                    { label: 'Active', value: stats.inProgress, color: '#2563eb' },
+                    { label: 'Done', value: stats.done, color: '#16a34a' },
+                  ].map(s => (
+                    <div key={s.label} style={{
+                      flex: 1, background: '#f9f9f9', borderRadius: '8px',
+                      padding: '8px', textAlign: 'center'
+                    }}>
+                      <div style={{ color: s.color, fontSize: '16px', fontWeight: '800' }}>{s.value}</div>
+                      <div style={{ color: '#aaa', fontSize: '10px' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Progress */}
+                {stats.total > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: '#aaa', fontSize: '11px' }}>Completion</span>
+                      <span style={{ color: '#d71920', fontSize: '11px', fontWeight: '700' }}>{completionRate}%</span>
+                    </div>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${completionRate}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div className={`status-dot ${emp.is_active ? 'online' : 'offline'}`} />
+                    <span style={{ color: '#aaa', fontSize: '11px' }}>
+                      {emp.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  {emp.department && (
+                    <span style={{ color: '#888', fontSize: '11px', background: '#f5f5f5', padding: '2px 8px', borderRadius: '4px' }}>
+                      {emp.department}
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Profile Modal */}
-      {showProfile && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-          display: 'flex', justifyContent: 'center',
-          alignItems: 'center', zIndex: 1000, padding: '20px'
-        }} onClick={() => setShowProfile(null)}>
-          <div style={{
-            background: '#1e293b', borderRadius: '20px',
-            width: '100%', maxWidth: '480px',
-            border: '1px solid #334155', overflow: 'hidden'
-          }} onClick={(e) => e.stopPropagation()}>
-            {/* Profile Header */}
+      {/* Employee Detail Modal */}
+      {showDetail && (
+        <div className="modal-overlay" onClick={() => setShowDetail(null)}>
+          <div className="modal" style={{ maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
             <div style={{
-              background: 'linear-gradient(135deg, #1e3a5f, #312e81)',
-              padding: '32px', textAlign: 'center'
+              background: `linear-gradient(135deg, ${getRoleConfig(showDetail.role).color}18, white)`,
+              padding: '24px', borderBottom: '1px solid #e5e5e5'
             }}>
-              <div style={{
-                width: '80px', height: '80px', borderRadius: '50%',
-                background: showProfile.avatar_url ? 'transparent' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontWeight: 'bold', fontSize: '32px',
-                margin: '0 auto 16px', border: '3px solid #334155',
-                overflow: 'hidden'
-              }}>
-                {showProfile.avatar_url
-                  ? <img src={showProfile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : showProfile.full_name?.charAt(0).toUpperCase()
-                }
-              </div>
-              <h2 style={{ color: 'white', margin: '0 0 6px', fontSize: '22px' }}>
-                {showProfile.full_name}
-              </h2>
-              <p style={{ color: '#94a3b8', margin: '0 0 12px', fontSize: '14px' }}>
-                {showProfile.designation || 'No designation'}
-              </p>
-              <span style={{
-                background: roleColor(showProfile.role) + '33',
-                color: roleColor(showProfile.role),
-                padding: '4px 16px', borderRadius: '20px',
-                fontSize: '12px', fontWeight: 'bold', textTransform: 'capitalize'
-              }}>
-                {showProfile.role}
-              </span>
-            </div>
-
-            {/* Profile Details */}
-            <div style={{ padding: '24px' }}>
-              {[
-                { icon: '📧', label: 'Email', value: showProfile.email },
-                { icon: '📱', label: 'Phone', value: showProfile.phone || 'N/A' },
-                { icon: '🏢', label: 'Department', value: showProfile.department || 'N/A' },
-                { icon: '📅', label: 'Joining Date', value: showProfile.joining_date ? new Date(showProfile.joining_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A' },
-                { icon: '⏱️', label: 'Experience', value: getJoiningDuration(showProfile.joining_date) || 'N/A' },
-                ...(isAdmin ? [{ icon: '💰', label: 'Base Salary', value: `PKR ${Number(showProfile.base_salary || 0).toLocaleString()}` }] : []),
-                { icon: '✅', label: 'Status', value: showProfile.is_active ? 'Active' : 'Inactive' },
-              ].map(item => (
-                <div key={item.label} style={{
-                  display: 'flex', alignItems: 'center',
-                  gap: '12px', padding: '12px 0',
-                  borderBottom: '1px solid #334155'
-                }}>
-                  <span style={{ fontSize: '18px', width: '24px' }}>{item.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: '#94a3b8', fontSize: '11px' }}>{item.label}</div>
-                    <div style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>{item.value}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="avatar avatar-xl" style={{
+                    background: `${getRoleConfig(showDetail.role).color}18`,
+                    color: getRoleConfig(showDetail.role).color,
+                    border: `2px solid ${getRoleConfig(showDetail.role).color}30`,
+                    fontSize: '28px', fontWeight: '800'
+                  }}>
+                    {showDetail.full_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 style={{ color: '#111', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>
+                      {showDetail.full_name}
+                    </h2>
+                    <div style={{ color: '#888', fontSize: '13px', marginBottom: '6px' }}>
+                      {showDetail.designation || 'No designation'} · {showDetail.department || 'No department'}
+                    </div>
+                    <span style={{
+                      background: `${getRoleConfig(showDetail.role).color}12`,
+                      color: getRoleConfig(showDetail.role).color,
+                      padding: '3px 10px', borderRadius: '20px',
+                      fontSize: '12px', fontWeight: '700'
+                    }}>
+                      {getRoleConfig(showDetail.role).label}
+                    </span>
                   </div>
                 </div>
-              ))}
+                <button onClick={() => setShowDetail(null)} style={{
+                  background: '#f5f5f5', border: 'none', borderRadius: '8px',
+                  color: '#888', cursor: 'pointer', width: '32px', height: '32px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>✕</button>
+              </div>
+            </div>
 
-              <button onClick={() => setShowProfile(null)} style={{
-                width: '100%', padding: '12px', marginTop: '16px',
-                background: '#334155', border: 'none', borderRadius: '10px',
-                color: 'white', cursor: 'pointer', fontSize: '14px'
-              }}>
-                Close
-              </button>
+            <div style={{ padding: '20px' }}>
+              {/* Info */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+                {[
+                  { label: 'Email', value: showDetail.email || '—', icon: '📧' },
+                  { label: 'Phone', value: showDetail.phone || '—', icon: '📱' },
+                  { label: 'Department', value: showDetail.department || '—', icon: '🏢' },
+                  { label: 'Status', value: showDetail.is_active ? 'Active' : 'Inactive', icon: showDetail.is_active ? '🟢' : '🔴' },
+                ].map(item => (
+                  <div key={item.label} style={{ background: '#f9f9f9', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ color: '#bbb', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+                      {item.label}
+                    </div>
+                    <div style={{ color: '#111', fontSize: '13px', fontWeight: '600' }}>
+                      {item.icon} {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Task Stats */}
+              {taskStats[showDetail.id] && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ color: '#888', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+                    Task Performance
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {[
+                      { label: 'Total Tasks', value: taskStats[showDetail.id].total, color: '#7c3aed' },
+                      { label: 'In Progress', value: taskStats[showDetail.id].inProgress, color: '#2563eb' },
+                      { label: 'Completed', value: taskStats[showDetail.id].done, color: '#16a34a' },
+                    ].map(s => (
+                      <div key={s.label} style={{ background: '#f9f9f9', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ color: s.color, fontSize: '22px', fontWeight: '800' }}>{s.value}</div>
+                        <div style={{ color: '#888', fontSize: '11px' }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {taskStats[showDetail.id].total > 0 && (
+                    <div style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ color: '#888', fontSize: '12px' }}>Completion Rate</span>
+                        <span style={{ color: '#d71920', fontSize: '12px', fontWeight: '700' }}>
+                          {Math.round((taskStats[showDetail.id].done / taskStats[showDetail.id].total) * 100)}%
+                        </span>
+                      </div>
+                      <div className="progress-bar">
+                        <div className="progress-fill" style={{
+                          width: `${Math.round((taskStats[showDetail.id].done / taskStats[showDetail.id].total) * 100)}%`
+                        }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: '8px', paddingTop: '16px', borderTop: '1px solid #e5e5e5' }}>
+                  <button onClick={() => { openEdit(showDetail); setShowDetail(null) }} className="btn btn-secondary btn-sm">
+                    ✏️ Edit
+                  </button>
+                  <button onClick={() => toggleActive(showDetail)} className="btn btn-sm" style={{
+                    background: showDetail.is_active ? 'rgba(215,25,32,0.08)' : 'rgba(22,163,74,0.08)',
+                    color: showDetail.is_active ? '#d71920' : '#16a34a',
+                    border: `1px solid ${showDetail.is_active ? 'rgba(215,25,32,0.2)' : 'rgba(22,163,74,0.2)'}`,
+                  }}>
+                    {showDetail.is_active ? '🔒 Deactivate' : '✅ Activate'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -419,84 +493,111 @@ export default function Employees({ profile }) {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', justifyContent: 'center',
-          alignItems: 'center', zIndex: 1000, padding: '20px'
-        }}>
-          <div style={{
-            background: '#1e293b', borderRadius: '16px', padding: '28px',
-            width: '100%', maxWidth: '480px',
-            maxHeight: '90vh', overflowY: 'auto', border: '1px solid #334155'
-          }}>
-            <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '18px' }}>
-              {editEmp ? '✏️ Employee Edit' : '+ Naya Employee'}
-            </h3>
-
-            {message && (
-              <div style={{
-                background: message.includes('❌') ? '#7f1d1d' : '#14532d',
-                color: message.includes('❌') ? '#fca5a5' : '#86efac',
-                padding: '10px', borderRadius: '8px',
-                marginBottom: '16px', fontSize: '13px'
-              }}>{message}</div>
-            )}
-
-            {[
-              { label: 'Full Name *', key: 'full_name', type: 'text', placeholder: 'Ali Hassan' },
-              { label: 'Email *', key: 'email', type: 'email', placeholder: 'ali@company.com', disabled: !!editEmp },
-              { label: 'Phone', key: 'phone', type: 'text', placeholder: '03xx-xxxxxxx' },
-              { label: 'Department', key: 'department', type: 'text', placeholder: 'Marketing' },
-              { label: 'Designation', key: 'designation', type: 'text', placeholder: 'Senior Developer' },
-              { label: 'Base Salary (PKR)', key: 'base_salary', type: 'number', placeholder: '50000' },
-              { label: 'Joining Date', key: 'joining_date', type: 'date' },
-              { label: 'Photo URL (optional)', key: 'avatar_url', type: 'text', placeholder: 'https://...' },
-            ].map(field => (
-              <div key={field.key} style={{ marginBottom: '12px' }}>
-                <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                  {field.label}
-                </label>
-                <input
-                  type={field.type} value={form[field.key]}
-                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                  placeholder={field.placeholder} disabled={field.disabled}
-                  style={{
-                    width: '100%', padding: '10px', background: '#0f172a',
-                    border: '1px solid #334155', borderRadius: '8px',
-                    color: 'white', fontSize: '13px', outline: 'none',
-                    boxSizing: 'border-box',
-                    opacity: field.disabled ? 0.5 : 1
-                  }}
-                />
-              </div>
-            ))}
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>Role</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
-                style={{
-                  width: '100%', padding: '10px', background: '#0f172a',
-                  border: '1px solid #334155', borderRadius: '8px',
-                  color: 'white', fontSize: '13px', outline: 'none'
-                }}>
-                <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
-                <option value="admin">Admin</option>
-              </select>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{
+              padding: '18px 24px', borderBottom: '1px solid #e5e5e5',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ color: '#111', margin: 0, fontSize: '17px', fontWeight: '800' }}>
+                {editEmployee ? '✏️ Edit Member' : '+ Add Member'}
+              </h3>
+              <button onClick={closeModal} style={{
+                background: '#f5f5f5', border: 'none', borderRadius: '8px',
+                color: '#888', cursor: 'pointer', width: '32px', height: '32px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={closeModal} style={{
-                flex: 1, padding: '11px', background: '#334155',
-                border: 'none', borderRadius: '8px',
-                color: 'white', cursor: 'pointer', fontSize: '14px'
-              }}>Cancel</button>
-              <button onClick={handleSubmit} style={{
-                flex: 2, padding: '11px',
-                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                border: 'none', borderRadius: '8px', color: 'white',
-                cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-              }}>{editEmp ? 'Update Karein' : 'Add Karein'}</button>
+            <div style={{ padding: '20px 24px' }}>
+              {message && (
+                <div style={{
+                  background: message.includes('❌') ? 'rgba(215,25,32,0.08)' : message.includes('ℹ️') ? 'rgba(37,99,235,0.08)' : 'rgba(22,163,74,0.08)',
+                  color: message.includes('❌') ? '#d71920' : message.includes('ℹ️') ? '#2563eb' : '#16a34a',
+                  padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px'
+                }}>{message}</div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                {[
+                  { label: 'Full Name *', key: 'full_name', type: 'text', placeholder: 'John Doe' },
+                  { label: 'Email *', key: 'email', type: 'email', placeholder: 'john@company.com' },
+                  { label: 'Phone', key: 'phone', type: 'text', placeholder: '03xx-xxxxxxx' },
+                  { label: 'Designation', key: 'designation', type: 'text', placeholder: 'Video Editor' },
+                ].map(field => (
+                  <div key={field.key}>
+                    <label className="input-label">{field.label}</label>
+                    <input type={field.type} value={form[field.key]}
+                      onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                      placeholder={field.placeholder} className="input" />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: '14px', marginBottom: '14px' }}>
+                <label className="input-label">Department</label>
+                <select value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  className="input">
+                  <option value="">-- Select Department --</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Role</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  {ROLES.map(role => (
+                    <div key={role.id}
+                      onClick={() => setForm({ ...form, role: role.id })}
+                      style={{
+                        padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                        border: `1px solid ${form.role === role.id ? role.color : '#e5e5e5'}`,
+                        background: form.role === role.id ? `${role.color}10` : 'white',
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        transition: 'all 0.15s'
+                      }}>
+                      <div style={{
+                        width: '10px', height: '10px', borderRadius: '50%',
+                        background: role.color, flexShrink: 0
+                      }} />
+                      <span style={{
+                        color: form.role === role.id ? role.color : '#666',
+                        fontSize: '13px', fontWeight: form.role === role.id ? '700' : '500'
+                      }}>
+                        {role.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="input-label">Base Salary (PKR)</label>
+                  <input type="number" value={form.base_salary}
+                    onChange={(e) => setForm({ ...form, base_salary: e.target.value })}
+                    placeholder="50000" className="input" />
+                </div>
+              )}
+
+              {!editEmployee && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="input-label">Password</label>
+                  <input type="password" value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder="Min 6 characters" className="input" />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={closeModal} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                  Cancel
+                </button>
+                <button onClick={handleSubmit} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>
+                  {editEmployee ? 'Update Member' : 'Add Member'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
