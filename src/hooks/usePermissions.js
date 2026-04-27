@@ -12,28 +12,37 @@ const ALL_MODULES = [
 export function usePermissions(profile) {
   const [permissions, setPermissions] = useState({})
   const [allPermissions, setAllPermissions] = useState([])
-  const [userModules, setUserModules] = useState([])
+  const [userModules, setUserModules] = useState(null)
   const [presentationMode, setPresentationMode] = useState(false)
-  const [adminVisibleModules, setAdminVisibleModules] = useState(ALL_MODULES)
+  const [adminVisibleModules, setAdminVisibleModules] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!profile) return
 
-    fetchPermissions()
-    fetchUserModules()
-    fetchPresentationMode()
+    const init = async () => {
+      setLoading(true)
 
-    if (profile.role === 'admin') {
-      try {
-        const saved = localStorage.getItem(ADMIN_STORAGE_KEY)
-        if (saved) setAdminVisibleModules(JSON.parse(saved))
-        else setAdminVisibleModules(ALL_MODULES)
-      } catch {
-        setAdminVisibleModules(ALL_MODULES)
+      if (profile.role === 'admin') {
+        try {
+          const saved = localStorage.getItem(ADMIN_STORAGE_KEY)
+          if (saved) setAdminVisibleModules(JSON.parse(saved))
+          else setAdminVisibleModules(ALL_MODULES)
+        } catch {
+          setAdminVisibleModules(ALL_MODULES)
+        }
       }
+
+      await Promise.all([
+        fetchPermissions(),
+        fetchUserModules(),
+        fetchPresentationMode(),
+      ])
+
+      setLoading(false)
     }
 
+    init()
     const cleanup = subscribeToChanges()
     return cleanup
   }, [profile?.id])
@@ -59,8 +68,6 @@ export function usePermissions(profile) {
       setPermissions(perms)
     } catch (e) {
       console.error('fetchPermissions error:', e)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -75,11 +82,10 @@ export function usePermissions(profile) {
       if (data && data.length > 0) {
         setUserModules(data.filter(d => d.is_visible).map(d => d.module_id))
       } else {
-        // No specific settings — use all modules
         setUserModules(ALL_MODULES)
       }
     } catch (e) {
-      console.error('fetchUserModules error:', e)
+      setUserModules(ALL_MODULES)
     }
   }
 
@@ -88,21 +94,19 @@ export function usePermissions(profile) {
       const { data } = await supabase
         .from('presentation_mode').select('*').single()
       if (data) setPresentationMode(data.is_active || false)
-    } catch (e) {
-      console.error('fetchPresentationMode error:', e)
-    }
+    } catch (e) {}
   }
 
   const subscribeToChanges = () => {
     const sub1 = supabase
-      .channel('permissions-live-v3')
+      .channel('permissions-live-v4')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'module_visibility'
       }, () => fetchPermissions())
       .subscribe()
 
     const sub2 = supabase
-      .channel('presentation-live-v3')
+      .channel('presentation-live-v4')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'presentation_mode'
       }, (payload) => {
@@ -111,7 +115,7 @@ export function usePermissions(profile) {
       .subscribe()
 
     const sub3 = supabase
-      .channel(`user-modules-${profile.id}`)
+      .channel(`user-modules-v2-${profile.id}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'user_module_visibility',
         filter: `user_id=eq.${profile.id}`
@@ -128,31 +132,28 @@ export function usePermissions(profile) {
   }
 
   const isInSidebar = (moduleId) => {
-    if (!profile) return false
+    if (!profile || loading) return false
 
-    // Admin — use local storage toggles
     if (profile.role === 'admin') {
       return adminVisibleModules.includes(moduleId)
     }
 
-    // Other users — check per-user visibility first
-    if (userModules.length > 0) {
+    if (userModules !== null) {
       return userModules.includes(moduleId)
     }
 
-    // Fallback to role-based
     if (permissions[moduleId]?.inSidebar === false) return false
     return true
   }
 
   const canAccess = (moduleId) => {
-    if (!profile) return false
+    if (!profile || loading) return false
 
     if (profile.role === 'admin') {
       return adminVisibleModules.includes(moduleId)
     }
 
-    if (userModules.length > 0) {
+    if (userModules !== null) {
       return userModules.includes(moduleId)
     }
 
@@ -212,9 +213,7 @@ export function usePermissions(profile) {
         }).eq('id', current.id)
       }
       setPresentationMode(active)
-    } catch (e) {
-      console.error('togglePresentationMode error:', e)
-    }
+    } catch (e) {}
   }
 
   return {
