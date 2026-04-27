@@ -2,499 +2,660 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 export default function Attendance({ profile }) {
-  const [todayRecord, setTodayRecord] = useState(null)
   const [attendance, setAttendance] = useState([])
-  const [leaves, setLeaves] = useState([])
+  const [leaveRequests, setLeaveRequests] = useState([])
   const [employees, setEmployees] = useState([])
+  const [settings, setSettings] = useState({ work_start_time: '09:00', late_grace_minutes: 15 })
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('today')
   const [message, setMessage] = useState('')
-  const [activeSection, setActiveSection] = useState('attendance')
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [todayRecord, setTodayRecord] = useState(null)
   const [showLeaveModal, setShowLeaveModal] = useState(false)
   const [showManualModal, setShowManualModal] = useState(false)
-  const [leaveForm, setLeaveForm] = useState({
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date().toISOString().split('T')[0],
-    leave_type: 'annual', reason: '', is_informed: true
-  })
-  const [manualForm, setManualForm] = useState({
-    employee_id: '', date: new Date().toISOString().split('T')[0],
-    check_in: '09:00', check_out: '18:00', status: 'present', notes: ''
-  })
+  const [leaveForm, setLeaveForm] = useState({ type: 'annual', start_date: '', end_date: '', reason: '' })
+  const [manualForm, setManualForm] = useState({ employee_id: '', date: '', check_in: '', check_out: '', status: 'present' })
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0])
+  const [checkingIn, setCheckingIn] = useState(false)
 
   const isAdmin = profile?.role === 'admin'
   const isManager = profile?.role === 'manager'
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    if (profile) {
-      fetchTodayRecord()
-      fetchAttendance()
-      fetchLeaves()
-      if (isAdmin || isManager) fetchEmployees()
+    if (!profile) return
+    fetchAll()
+
+    // ⚡ Realtime
+    const sub1 = supabase
+      .channel(`attendance-live-${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+        fetchAttendance()
+        fetchTodayRecord()
+      })
+      .subscribe()
+
+    const sub2 = supabase
+      .channel(`leaves-live-${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => fetchLeaves())
+      .subscribe()
+
+    return () => {
+      sub1.unsubscribe()
+      sub2.unsubscribe()
     }
-  }, [profile, selectedDate])
+  }, [profile])
 
-  const fetchTodayRecord = async () => {
-    const { data } = await supabase
-      .from('attendance').select('*')
-      .eq('employee_id', profile.id).eq('date', today).single()
-    setTodayRecord(data)
-  }
+  useEffect(() => {
+    if (message) {
+      const t = setTimeout(() => setMessage(''), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [message])
 
-  const fetchAttendance = async () => {
+  useEffect(() => {
+    fetchAttendance()
+  }, [filterDate])
+
+  const fetchAll = async () => {
     setLoading(true)
-    let query = supabase
-      .from('attendance')
-      .select('*, profiles(full_name, department)')
-      .eq('date', selectedDate)
-      .order('check_in', { ascending: false })
-    if (!isAdmin && !isManager) query = query.eq('employee_id', profile.id)
-    const { data } = await query
-    setAttendance(data || [])
+    await Promise.all([
+      fetchAttendance(),
+      fetchTodayRecord(),
+      fetchLeaves(),
+      fetchSettings(),
+      fetchEmployees(),
+    ])
     setLoading(false)
   }
 
+  const fetchAttendance = async () => {
+    try {
+      let query = supabase
+        .from('attendance')
+        .select('*, profiles(full_name, department, designation)')
+        .eq('date', filterDate)
+        .order('check_in', { ascending: false })
+
+      if (!isAdmin && !isManager) {
+        query = query.eq('employee_id', profile.id)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      setAttendance(data || [])
+    } catch (e) {
+      console.error('fetchAttendance error:', e)
+    }
+  }
+
+  const fetchTodayRecord = async () => {
+    try {
+      const { data } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', profile.id)
+        .eq('date', today)
+        .maybeSingle()
+      setTodayRecord(data || null)
+    } catch (e) {
+      console.error('fetchTodayRecord error:', e)
+    }
+  }
+
   const fetchLeaves = async () => {
-    let query = supabase
-      .from('leave_requests')
-      .select('*, profiles(full_name)')
-      .order('created_at', { ascending: false })
-    if (!isAdmin && !isManager) query = query.eq('employee_id', profile.id)
-    const { data } = await query
-    setLeaves(data || [])
+    try {
+      let query = supabase
+        .from('leave_requests')
+        .select('*, profiles(full_name)')
+        .order('created_at', { ascending: false })
+
+      if (!isAdmin && !isManager) {
+        query = query.eq('employee_id', profile.id)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      setLeaveRequests(data || [])
+    } catch (e) {
+      console.error('fetchLeaves error:', e)
+    }
+  }
+
+  const fetchSettings = async () => {
+    try {
+      const { data } = await supabase.from('company_settings').select('*').single()
+      if (data) setSettings({
+        work_start_time: data.work_start_time?.slice(0, 5) || '09:00',
+        late_grace_minutes: data.late_grace_minutes || 15
+      })
+    } catch (e) {}
   }
 
   const fetchEmployees = async () => {
-    const { data } = await supabase
-      .from('profiles').select('id, full_name').eq('is_active', true)
-    setEmployees(data || [])
+    try {
+      const { data } = await supabase.from('profiles').select('id, full_name').eq('is_active', true)
+      setEmployees(data || [])
+    } catch (e) {}
   }
 
-  const handleCheckIn = async () => {
-    const now = new Date()
-    const workStart = new Date()
-    workStart.setHours(9, 0, 0, 0)
-    const lateMinutes = Math.max(0, Math.floor((now - workStart) / 60000) - 15)
-    const status = lateMinutes > 0 ? 'late' : 'present'
+  const checkIn = async () => {
+    if (todayRecord) { setMessage('❌ Already checked in today!'); return }
+    setCheckingIn(true)
+    try {
+      const now = new Date()
+      const timeStr = now.toTimeString().slice(0, 5)
+      const [startH, startM] = settings.work_start_time.split(':').map(Number)
+      const [nowH, nowM] = timeStr.split(':').map(Number)
+      const startMins = startH * 60 + startM + settings.late_grace_minutes
+      const nowMins = nowH * 60 + nowM
+      const isLate = nowMins > startMins
+      const lateMinutes = isLate ? nowMins - (startH * 60 + startM) : 0
 
-    const { error } = await supabase.from('attendance').insert({
-      employee_id: profile.id, date: today,
-      check_in: now.toISOString(), status, late_minutes: lateMinutes
-    })
+      const { data, error } = await supabase.from('attendance').insert({
+        employee_id: profile.id,
+        date: today,
+        check_in: now.toISOString(),
+        status: isLate ? 'late' : 'present',
+        late_minutes: lateMinutes
+      }).select().single()
 
-    if (error) setMessage('❌ ' + error.message)
-    else {
-      setMessage(lateMinutes > 0
-        ? `⚠️ Check-in! ${lateMinutes} minute late.`
-        : '✅ Check-in! Time pe aaye!')
-      fetchTodayRecord(); fetchAttendance()
+      if (error) throw error
+      setTodayRecord(data)
+      setMessage(isLate
+        ? `⚠️ Checked in late by ${lateMinutes} minutes`
+        : '✅ Checked in successfully!'
+      )
+      fetchAttendance()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    } finally {
+      setCheckingIn(false)
     }
   }
 
-  const handleCheckOut = async () => {
-    const now = new Date()
-    const workEnd = new Date()
-    workEnd.setHours(18, 0, 0, 0)
-    const earlyMinutes = Math.max(0, Math.floor((workEnd - now) / 60000))
+  const checkOut = async () => {
+    if (!todayRecord) { setMessage('❌ No check-in record found!'); return }
+    if (todayRecord.check_out) { setMessage('❌ Already checked out!'); return }
 
-    const { error } = await supabase.from('attendance')
-      .update({ check_out: now.toISOString(), early_leave_minutes: earlyMinutes })
-      .eq('id', todayRecord.id)
+    setCheckingIn(true)
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .update({ check_out: new Date().toISOString() })
+        .eq('id', todayRecord.id)
+        .select()
+        .single()
 
-    if (error) setMessage('❌ ' + error.message)
-    else {
-      setMessage(earlyMinutes > 0 ? `⚠️ Check-out! ${earlyMinutes} min jaldi.` : '✅ Check-out!')
-      fetchTodayRecord(); fetchAttendance()
+      if (error) throw error
+      setTodayRecord(data)
+      setMessage('✅ Checked out successfully!')
+      fetchAttendance()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    } finally {
+      setCheckingIn(false)
     }
   }
 
-  const submitLeave = async () => {
-    const start = new Date(leaveForm.start_date)
-    const end = new Date(leaveForm.end_date)
-    const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
-
-    const { error } = await supabase.from('leave_requests').insert({
-      employee_id: profile.id,
-      start_date: leaveForm.start_date,
-      end_date: leaveForm.end_date,
-      total_days: totalDays,
-      leave_type: leaveForm.leave_type,
-      reason: leaveForm.reason,
-      is_informed: leaveForm.is_informed
-    })
-
-    if (error) setMessage('❌ ' + error.message)
-    else {
-      setMessage('✅ Leave request submit ho gaya!')
-      setShowLeaveModal(false)
-      fetchLeaves()
-    }
-  }
-
-  const handleLeaveAction = async (id, status) => {
-    await supabase.from('leave_requests')
-      .update({ status, reviewed_by: profile.id, reviewed_at: new Date().toISOString() })
-      .eq('id', id)
-    setMessage(`✅ Leave ${status}!`)
-    fetchLeaves()
-  }
-
-  const submitManualAttendance = async () => {
-    if (!manualForm.employee_id) {
-      setMessage('❌ Employee select karein!')
+  const requestLeave = async () => {
+    if (!leaveForm.start_date || !leaveForm.end_date || !leaveForm.reason) {
+      setMessage('❌ All fields required!')
       return
     }
+    try {
+      const start = new Date(leaveForm.start_date)
+      const end = new Date(leaveForm.end_date)
+      const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
 
-    const dateStr = manualForm.date
-    const checkIn = new Date(`${dateStr}T${manualForm.check_in}:00`)
-    const checkOut = new Date(`${dateStr}T${manualForm.check_out}:00`)
-    const workStart = new Date(`${dateStr}T09:00:00`)
-    const lateMinutes = Math.max(0, Math.floor((checkIn - workStart) / 60000) - 15)
+      const { error } = await supabase.from('leave_requests').insert({
+        employee_id: profile.id,
+        type: leaveForm.type,
+        start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date,
+        total_days: totalDays,
+        reason: leaveForm.reason,
+        status: 'pending'
+      })
 
-    const { error } = await supabase.from('attendance').upsert({
-      employee_id: manualForm.employee_id,
-      date: manualForm.date,
-      check_in: checkIn.toISOString(),
-      check_out: checkOut.toISOString(),
-      status: manualForm.status,
-      late_minutes: lateMinutes,
-      notes: manualForm.notes
-    }, { onConflict: 'employee_id,date' })
+      if (error) throw error
+      setMessage('✅ Leave request submitted!')
+      setLeaveForm({ type: 'annual', start_date: '', end_date: '', reason: '' })
+      setShowLeaveModal(false)
+      fetchLeaves()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    }
+  }
 
-    if (error) setMessage('❌ ' + error.message)
-    else {
-      setMessage('✅ Attendance add ho gaya!')
+  const updateLeaveStatus = async (id, status) => {
+    try {
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({ status, approved_by: profile.id })
+        .eq('id', id)
+
+      if (error) throw error
+      setMessage(`✅ Leave ${status}!`)
+      fetchLeaves()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    }
+  }
+
+  const addManualAttendance = async () => {
+    if (!manualForm.employee_id || !manualForm.date) {
+      setMessage('❌ Employee and date required!')
+      return
+    }
+    try {
+      const { error } = await supabase.from('attendance').upsert({
+        employee_id: manualForm.employee_id,
+        date: manualForm.date,
+        check_in: manualForm.check_in ? new Date(`${manualForm.date}T${manualForm.check_in}`).toISOString() : null,
+        check_out: manualForm.check_out ? new Date(`${manualForm.date}T${manualForm.check_out}`).toISOString() : null,
+        status: manualForm.status,
+        late_minutes: 0
+      }, { onConflict: 'employee_id,date' })
+
+      if (error) throw error
+      setMessage('✅ Attendance added!')
+      setManualForm({ employee_id: '', date: '', check_in: '', check_out: '', status: 'present' })
       setShowManualModal(false)
       fetchAttendance()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
     }
   }
 
   const formatTime = (ts) => {
     if (!ts) return '--:--'
-    return new Date(ts).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+    return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   }
 
-  const statusColor = (s) => {
-    const c = { present: '#10b981', late: '#f59e0b', absent: '#ef4444', half_day: '#8b5cf6', on_leave: '#3b82f6' }
-    return c[s] || '#94a3b8'
+  const getDuration = (checkIn, checkOut) => {
+    if (!checkIn || !checkOut) return '--'
+    const diff = (new Date(checkOut) - new Date(checkIn)) / (1000 * 60)
+    const h = Math.floor(diff / 60)
+    const m = Math.floor(diff % 60)
+    return `${h}h ${m}m`
   }
 
-  const statusLabel = (s) => {
-    const l = { present: '✅ Present', late: '⏰ Late', absent: '❌ Absent', half_day: '🌗 Half Day', on_leave: '🏖️ Leave' }
-    return l[s] || s
+  const statusConfig = {
+    present: { color: '#16a34a', bg: 'rgba(22,163,74,0.1)', label: 'Present' },
+    late: { color: '#d97706', bg: 'rgba(217,119,6,0.1)', label: 'Late' },
+    absent: { color: '#d71920', bg: 'rgba(215,25,32,0.1)', label: 'Absent' },
+    on_leave: { color: '#2563eb', bg: 'rgba(37,99,235,0.1)', label: 'On Leave' },
   }
 
-  const leaveStatusColor = (s) => {
-    const c = { pending: '#f59e0b', approved: '#10b981', rejected: '#ef4444' }
-    return c[s] || '#94a3b8'
+  const leaveStatusConfig = {
+    pending: { color: '#d97706', bg: 'rgba(217,119,6,0.1)', label: 'Pending' },
+    approved: { color: '#16a34a', bg: 'rgba(22,163,74,0.1)', label: 'Approved' },
+    rejected: { color: '#d71920', bg: 'rgba(215,25,32,0.1)', label: 'Rejected' },
   }
+
+  // Stats
+  const presentCount = attendance.filter(a => a.status === 'present').length
+  const lateCount = attendance.filter(a => a.status === 'late').length
+  const absentCount = attendance.filter(a => a.status === 'absent').length
+  const pendingLeaves = leaveRequests.filter(l => l.status === 'pending').length
 
   return (
-    <div>
-      {/* Today Check-in/out */}
-      {activeSection === 'attendance' && selectedDate === today && (
-        <div style={{
-          background: '#1e293b', borderRadius: '16px',
-          padding: '24px', marginBottom: '24px', border: '1px solid #334155'
-        }}>
-          <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '17px' }}>
-            🕐 Aaj Ki Attendance
-          </h3>
-
-          {message && (
-            <div style={{
-              background: message.includes('❌') ? '#7f1d1d'
-                : message.includes('⚠️') ? '#78350f' : '#14532d',
-              color: message.includes('❌') ? '#fca5a5'
-                : message.includes('⚠️') ? '#fde68a' : '#86efac',
-              padding: '10px 14px', borderRadius: '8px',
-              marginBottom: '16px', fontSize: '13px'
-            }}>{message}</div>
-          )}
-
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-            gap: '12px', marginBottom: '20px'
-          }}>
-            {[
-              { label: 'CHECK IN', value: formatTime(todayRecord?.check_in), color: '#10b981' },
-              { label: 'CHECK OUT', value: formatTime(todayRecord?.check_out), color: '#ef4444' },
-              { label: 'STATUS', value: todayRecord ? statusLabel(todayRecord.status) : '—', color: statusColor(todayRecord?.status) },
-              { label: 'LATE MIN', value: todayRecord?.late_minutes || 0, color: todayRecord?.late_minutes > 0 ? '#f59e0b' : '#10b981' },
-            ].map(card => (
-              <div key={card.label} style={{
-                background: '#0f172a', borderRadius: '10px',
-                padding: '14px', textAlign: 'center'
-              }}>
-                <div style={{ color: '#94a3b8', fontSize: '10px', marginBottom: '6px' }}>{card.label}</div>
-                <div style={{ color: card.color, fontSize: '16px', fontWeight: 'bold' }}>{card.value}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={handleCheckIn} disabled={!!todayRecord?.check_in} style={{
-              flex: 1, padding: '13px',
-              background: todayRecord?.check_in ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
-              border: 'none', borderRadius: '10px',
-              color: todayRecord?.check_in ? '#64748b' : 'white',
-              cursor: todayRecord?.check_in ? 'not-allowed' : 'pointer',
-              fontSize: '14px', fontWeight: 'bold'
-            }}>
-              {todayRecord?.check_in ? '✅ Check-in Ho Gaya' : '🟢 Check In'}
-            </button>
-            <button onClick={handleCheckOut}
-              disabled={!todayRecord?.check_in || !!todayRecord?.check_out}
-              style={{
-                flex: 1, padding: '13px',
-                background: !todayRecord?.check_in || todayRecord?.check_out
-                  ? '#334155' : 'linear-gradient(135deg, #ef4444, #dc2626)',
-                border: 'none', borderRadius: '10px',
-                color: !todayRecord?.check_in || todayRecord?.check_out ? '#64748b' : 'white',
-                cursor: !todayRecord?.check_in || todayRecord?.check_out ? 'not-allowed' : 'pointer',
-                fontSize: '14px', fontWeight: 'bold'
-              }}>
-              {todayRecord?.check_out ? '✅ Check-out Ho Gaya' : '🔴 Check Out'}
-            </button>
-          </div>
+    <div className="fade-in">
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h2 style={{ color: '#111', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>Attendance</h2>
+          <p style={{ color: '#888', margin: 0, fontSize: '13px' }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-      )}
-
-      {/* Section Tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {[
-          { id: 'attendance', label: '📅 Attendance' },
-          { id: 'leaves', label: '🏖️ Leave Requests' },
-        ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveSection(tab.id)} style={{
-            padding: '9px 18px', borderRadius: '8px', border: 'none',
-            background: activeSection === tab.id
-              ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : '#1e293b',
-            color: activeSection === tab.id ? 'white' : '#94a3b8',
-            cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-          }}>{tab.label}</button>
-        ))}
-
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowLeaveModal(true)} style={{
-            padding: '9px 16px', background: '#14532d',
-            border: '1px solid #22c55e', borderRadius: '8px',
-            color: '#86efac', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-          }}>
-            + Leave Request
-          </button>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {(isAdmin || isManager) && (
-            <button onClick={() => setShowManualModal(true)} style={{
-              padding: '9px 16px', background: '#1e3a5f',
-              border: '1px solid #3b82f6', borderRadius: '8px',
-              color: '#93c5fd', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-            }}>
-              + Manual Entry
+            <button onClick={() => setShowManualModal(true)} className="btn btn-secondary btn-sm">
+              ✏️ Manual Entry
             </button>
+          )}
+          <button onClick={() => setShowLeaveModal(true)} className="btn btn-secondary btn-sm">
+            🏖️ Request Leave
+          </button>
+        </div>
+      </div>
+
+      {/* Check In/Out Card */}
+      <div style={{
+        background: 'white', borderRadius: '16px', padding: '24px',
+        marginBottom: '20px', border: '1px solid #e5e5e5',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+        display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', flexWrap: 'wrap', gap: '16px'
+      }}>
+        <div>
+          <div style={{ color: '#888', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            Today's Status
+          </div>
+          {todayRecord ? (
+            <div>
+              <div style={{ display: 'flex', gap: '20px', marginBottom: '8px' }}>
+                <div>
+                  <div style={{ color: '#bbb', fontSize: '11px', marginBottom: '2px' }}>Check In</div>
+                  <div style={{ color: '#111', fontWeight: '800', fontSize: '18px' }}>{formatTime(todayRecord.check_in)}</div>
+                </div>
+                {todayRecord.check_out && (
+                  <div>
+                    <div style={{ color: '#bbb', fontSize: '11px', marginBottom: '2px' }}>Check Out</div>
+                    <div style={{ color: '#111', fontWeight: '800', fontSize: '18px' }}>{formatTime(todayRecord.check_out)}</div>
+                  </div>
+                )}
+                {todayRecord.check_out && (
+                  <div>
+                    <div style={{ color: '#bbb', fontSize: '11px', marginBottom: '2px' }}>Duration</div>
+                    <div style={{ color: '#d71920', fontWeight: '800', fontSize: '18px' }}>
+                      {getDuration(todayRecord.check_in, todayRecord.check_out)}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <span style={{
+                background: statusConfig[todayRecord.status]?.bg,
+                color: statusConfig[todayRecord.status]?.color,
+                padding: '3px 12px', borderRadius: '20px',
+                fontSize: '12px', fontWeight: '700'
+              }}>
+                {statusConfig[todayRecord.status]?.label}
+                {todayRecord.late_minutes > 0 && ` — ${todayRecord.late_minutes} min late`}
+              </span>
+            </div>
+          ) : (
+            <div style={{ color: '#888', fontSize: '14px' }}>Not checked in yet</div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {!todayRecord ? (
+            <button
+              onClick={checkIn}
+              disabled={checkingIn}
+              className="btn btn-primary"
+              style={{ padding: '12px 28px', fontSize: '15px', opacity: checkingIn ? 0.7 : 1 }}
+            >
+              {checkingIn ? '⟳ Processing...' : '✅ Check In'}
+            </button>
+          ) : !todayRecord.check_out ? (
+            <button
+              onClick={checkOut}
+              disabled={checkingIn}
+              className="btn btn-sm"
+              style={{
+                padding: '12px 28px', fontSize: '15px',
+                background: 'rgba(215,25,32,0.08)',
+                color: '#d71920',
+                border: '1px solid rgba(215,25,32,0.2)',
+                opacity: checkingIn ? 0.7 : 1
+              }}
+            >
+              {checkingIn ? '⟳ Processing...' : '🔴 Check Out'}
+            </button>
+          ) : (
+            <div style={{
+              background: 'rgba(22,163,74,0.1)', color: '#16a34a',
+              padding: '12px 24px', borderRadius: '10px',
+              fontSize: '14px', fontWeight: '700'
+            }}>
+              ✅ Day Complete!
+            </div>
           )}
         </div>
       </div>
 
       {/* Message */}
-      {message && activeSection === 'leaves' && (
+      {message && (
         <div style={{
-          background: message.includes('❌') ? '#7f1d1d' : '#14532d',
-          color: message.includes('❌') ? '#fca5a5' : '#86efac',
-          padding: '10px 14px', borderRadius: '8px',
-          marginBottom: '16px', fontSize: '13px'
+          background: message.includes('❌') ? 'rgba(215,25,32,0.08)' : message.includes('⚠️') ? 'rgba(217,119,6,0.08)' : 'rgba(22,163,74,0.08)',
+          border: `1px solid ${message.includes('❌') ? 'rgba(215,25,32,0.2)' : message.includes('⚠️') ? 'rgba(217,119,6,0.2)' : 'rgba(22,163,74,0.2)'}`,
+          color: message.includes('❌') ? '#d71920' : message.includes('⚠️') ? '#d97706' : '#16a34a',
+          padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px'
         }}>{message}</div>
       )}
 
-      {/* Attendance Section */}
-      {activeSection === 'attendance' && (
-        <div style={{
-          background: '#1e293b', borderRadius: '16px',
-          padding: '24px', border: '1px solid #334155'
-        }}>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between',
-            alignItems: 'center', marginBottom: '20px',
-            flexWrap: 'wrap', gap: '12px'
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+        {[
+          { label: 'Present', value: presentCount, color: '#16a34a' },
+          { label: 'Late', value: lateCount, color: '#d97706' },
+          { label: 'Absent', value: absentCount, color: '#d71920' },
+          { label: 'Pending Leaves', value: pendingLeaves, color: '#2563eb' },
+        ].map(stat => (
+          <div key={stat.label} style={{
+            background: 'white', borderRadius: '10px', padding: '14px',
+            textAlign: 'center', border: `1px solid ${stat.color}22`,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)'
           }}>
-            <h3 style={{ color: 'white', margin: 0, fontSize: '17px' }}>
-              📋 {isAdmin || isManager ? 'Sab Ki Attendance' : 'Meri Attendance'}
-            </h3>
-            <input type="date" value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              style={{
-                padding: '8px 12px', background: '#0f172a',
-                border: '1px solid #334155', borderRadius: '8px',
-                color: 'white', fontSize: '13px', outline: 'none'
-              }}
-            />
+            <div style={{ color: stat.color, fontSize: '20px', fontWeight: '800' }}>{stat.value}</div>
+            <div style={{ color: '#888', fontSize: '11px', marginTop: '2px' }}>{stat.label}</div>
           </div>
+        ))}
+      </div>
 
-          {(isAdmin || isManager) && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))',
-              gap: '10px', marginBottom: '20px'
-            }}>
-              {[
-                { label: 'Present', color: '#10b981', status: 'present' },
-                { label: 'Late', color: '#f59e0b', status: 'late' },
-                { label: 'Absent', color: '#ef4444', status: 'absent' },
-                { label: 'Leave', color: '#3b82f6', status: 'on_leave' },
-              ].map(s => (
-                <div key={s.status} style={{
-                  background: '#0f172a', borderRadius: '8px',
-                  padding: '10px', textAlign: 'center',
-                  border: `1px solid ${s.color}33`
-                }}>
-                  <div style={{ color: s.color, fontSize: '20px', fontWeight: 'bold' }}>
-                    {attendance.filter(a => a.status === s.status).length}
-                  </div>
-                  <div style={{ color: '#94a3b8', fontSize: '11px' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #e5e5e5', marginBottom: '20px', background: 'white', borderRadius: '12px 12px 0 0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        {[
+          { id: 'today', label: '📅 Today' },
+          { id: 'history', label: '📊 History' },
+          { id: 'leaves', label: `🏖️ Leaves ${pendingLeaves > 0 ? `(${pendingLeaves})` : ''}` },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+            padding: '12px 20px', border: 'none', background: 'transparent',
+            color: activeTab === tab.id ? '#d71920' : '#888',
+            fontWeight: activeTab === tab.id ? '700' : '500',
+            fontSize: '13px', cursor: 'pointer',
+            borderBottom: activeTab === tab.id ? '2px solid #d71920' : '2px solid transparent',
+            whiteSpace: 'nowrap'
+          }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          {loading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '30px' }}>Loading...</div>
-          ) : attendance.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>
-              <div style={{ fontSize: '40px', marginBottom: '10px' }}>📅</div>
-              <p>Is date ki koi attendance nahi</p>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr>
-                    {(isAdmin || isManager) && (
-                      <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Employee</th>
-                    )}
-                    <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Check In</th>
-                    <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Check Out</th>
-                    <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Late</th>
-                    <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Status</th>
-                    {(isAdmin || isManager) && (
-                      <th style={{ color: '#94a3b8', textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #334155' }}>Notes</th>
-                    )}
+      {/* Today Tab */}
+      {activeTab === 'today' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Check In</th>
+                <th>Check Out</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendance.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+                    No attendance records for today
+                  </td>
+                </tr>
+              ) : (
+                attendance.map(att => (
+                  <tr key={att.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div className="avatar avatar-sm">
+                          {att.profiles?.full_name?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: '700', color: '#111' }}>{att.profiles?.full_name}</div>
+                          <div style={{ color: '#888', fontSize: '11px' }}>{att.profiles?.designation || att.profiles?.department}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ color: '#111', fontWeight: '600' }}>{formatTime(att.check_in)}</td>
+                    <td style={{ color: att.check_out ? '#111' : '#bbb', fontWeight: att.check_out ? '600' : '400' }}>
+                      {att.check_out ? formatTime(att.check_out) : 'Not yet'}
+                    </td>
+                    <td style={{ color: '#888' }}>{getDuration(att.check_in, att.check_out)}</td>
+                    <td>
+                      <span style={{
+                        background: statusConfig[att.status]?.bg,
+                        color: statusConfig[att.status]?.color,
+                        padding: '3px 10px', borderRadius: '20px',
+                        fontSize: '11px', fontWeight: '700'
+                      }}>
+                        {statusConfig[att.status]?.label}
+                        {att.late_minutes > 0 && ` (${att.late_minutes}m)`}
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {attendance.map(record => (
-                    <tr key={record.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                      {(isAdmin || isManager) && (
-                        <td style={{ padding: '12px', color: 'white' }}>
-                          <div style={{ fontWeight: 'bold' }}>{record.profiles?.full_name}</div>
-                          <div style={{ color: '#94a3b8', fontSize: '11px' }}>{record.profiles?.department}</div>
-                        </td>
-                      )}
-                      <td style={{ padding: '12px', color: '#10b981' }}>{formatTime(record.check_in)}</td>
-                      <td style={{ padding: '12px', color: '#ef4444' }}>{formatTime(record.check_out)}</td>
-                      <td style={{ padding: '12px', color: record.late_minutes > 0 ? '#f59e0b' : '#10b981' }}>
-                        {record.late_minutes || 0} min
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{
-                          background: statusColor(record.status) + '22',
-                          color: statusColor(record.status),
-                          padding: '3px 10px', borderRadius: '20px',
-                          fontSize: '11px', fontWeight: 'bold'
-                        }}>
-                          {statusLabel(record.status)}
-                        </span>
-                      </td>
-                      {(isAdmin || isManager) && (
-                        <td style={{ padding: '12px', color: '#94a3b8', fontSize: '12px' }}>
-                          {record.notes || '—'}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Leaves Section */}
-      {activeSection === 'leaves' && (
-        <div style={{
-          background: '#1e293b', borderRadius: '16px',
-          padding: '24px', border: '1px solid #334155'
-        }}>
-          <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '17px' }}>
-            🏖️ Leave Requests
-          </h3>
+      {/* History Tab */}
+      {activeTab === 'history' && (
+        <div>
+          <div style={{ marginBottom: '16px' }}>
+            <input type="date" value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              style={{
+                padding: '8px 12px', background: 'white',
+                border: '1px solid #e5e5e5', borderRadius: '8px',
+                color: '#111', fontSize: '13px', outline: 'none'
+              }}
+            />
+          </div>
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Check In</th>
+                  <th>Check Out</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendance.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+                      No records for this date
+                    </td>
+                  </tr>
+                ) : (
+                  attendance.map(att => (
+                    <tr key={att.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div className="avatar avatar-sm">{att.profiles?.full_name?.charAt(0).toUpperCase()}</div>
+                          <span style={{ fontWeight: '600', color: '#111' }}>{att.profiles?.full_name}</span>
+                        </div>
+                      </td>
+                      <td style={{ color: '#888' }}>{att.date}</td>
+                      <td style={{ fontWeight: '600' }}>{formatTime(att.check_in)}</td>
+                      <td style={{ color: att.check_out ? '#111' : '#bbb' }}>
+                        {att.check_out ? formatTime(att.check_out) : 'Not yet'}
+                      </td>
+                      <td style={{ color: '#888' }}>{getDuration(att.check_in, att.check_out)}</td>
+                      <td>
+                        <span style={{
+                          background: statusConfig[att.status]?.bg,
+                          color: statusConfig[att.status]?.color,
+                          padding: '3px 10px', borderRadius: '20px',
+                          fontSize: '11px', fontWeight: '700'
+                        }}>
+                          {statusConfig[att.status]?.label}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-          {leaves.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>
-              <div style={{ fontSize: '40px', marginBottom: '10px' }}>🏖️</div>
-              <p>Koi leave request nahi</p>
+      {/* Leaves Tab */}
+      {activeTab === 'leaves' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <span style={{ color: '#111', fontWeight: '700', fontSize: '15px' }}>
+              Leave Requests
+            </span>
+            <button onClick={() => setShowLeaveModal(true)} className="btn btn-primary btn-sm">
+              + Request Leave
+            </button>
+          </div>
+
+          {leaveRequests.length === 0 ? (
+            <div className="empty-state card">
+              <div className="empty-icon">🏖️</div>
+              <div className="empty-title">No leave requests</div>
+              <div className="empty-desc">Submit a leave request when needed</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {leaves.map(leave => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {leaveRequests.map(leave => (
                 <div key={leave.id} style={{
-                  background: '#0f172a', borderRadius: '10px',
-                  padding: '16px', border: '1px solid #334155'
+                  background: 'white', borderRadius: '12px', padding: '16px',
+                  border: '1px solid #e5e5e5', boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
                 }}>
-                  <div style={{
-                    display: 'flex', justifyContent: 'space-between',
-                    alignItems: 'center', marginBottom: '10px',
-                    flexWrap: 'wrap', gap: '8px'
-                  }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
                       {(isAdmin || isManager) && (
-                        <div style={{ color: 'white', fontWeight: 'bold', fontSize: '15px', marginBottom: '2px' }}>
-                          👤 {leave.profiles?.full_name}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <div className="avatar avatar-sm">{leave.profiles?.full_name?.charAt(0).toUpperCase()}</div>
+                          <span style={{ color: '#111', fontWeight: '700', fontSize: '14px' }}>{leave.profiles?.full_name}</span>
                         </div>
                       )}
-                      <div style={{ color: '#94a3b8', fontSize: '13px' }}>
-                        {new Date(leave.start_date).toLocaleDateString()} → {new Date(leave.end_date).toLocaleDateString()} ({leave.total_days} days)
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ color: '#bbb', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Type</div>
+                          <div style={{ color: '#111', fontWeight: '600', fontSize: '13px', textTransform: 'capitalize' }}>{leave.type} Leave</div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#bbb', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Duration</div>
+                          <div style={{ color: '#111', fontWeight: '600', fontSize: '13px' }}>
+                            {leave.start_date} → {leave.end_date} ({leave.total_days} days)
+                          </div>
+                        </div>
                       </div>
+                      {leave.reason && (
+                        <div style={{ color: '#666', fontSize: '13px', marginTop: '8px' }}>
+                          📝 {leave.reason}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <span style={{
-                        background: '#334155', color: '#94a3b8',
-                        padding: '3px 10px', borderRadius: '20px',
-                        fontSize: '11px', textTransform: 'capitalize'
+                        background: leaveStatusConfig[leave.status]?.bg,
+                        color: leaveStatusConfig[leave.status]?.color,
+                        padding: '4px 12px', borderRadius: '20px',
+                        fontSize: '12px', fontWeight: '700'
                       }}>
-                        {leave.leave_type}
+                        {leaveStatusConfig[leave.status]?.label}
                       </span>
-                      <span style={{
-                        background: leaveStatusColor(leave.status) + '22',
-                        color: leaveStatusColor(leave.status),
-                        padding: '3px 10px', borderRadius: '20px',
-                        fontSize: '11px', fontWeight: 'bold', textTransform: 'capitalize'
-                      }}>
-                        {leave.status}
-                      </span>
+
+                      {(isAdmin || isManager) && leave.status === 'pending' && (
+                        <>
+                          <button onClick={() => updateLeaveStatus(leave.id, 'approved')}
+                            className="btn btn-success btn-sm">
+                            ✅ Approve
+                          </button>
+                          <button onClick={() => updateLeaveStatus(leave.id, 'rejected')}
+                            className="btn btn-danger btn-sm">
+                            ❌ Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-
-                  {leave.reason && (
-                    <div style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '10px' }}>
-                      📝 {leave.reason}
-                    </div>
-                  )}
-
-                  {leave.status === 'pending' && (isAdmin || isManager) && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => handleLeaveAction(leave.id, 'approved')} style={{
-                        padding: '7px 14px', background: '#14532d',
-                        border: '1px solid #22c55e', borderRadius: '8px',
-                        color: '#86efac', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
-                      }}>✅ Approve</button>
-                      <button onClick={() => handleLeaveAction(leave.id, 'rejected')} style={{
-                        padding: '7px 14px', background: '#7f1d1d',
-                        border: '1px solid #ef4444', borderRadius: '8px',
-                        color: '#fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
-                      }}>❌ Reject</button>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -504,82 +665,80 @@ export default function Attendance({ profile }) {
 
       {/* Leave Request Modal */}
       {showLeaveModal && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', justifyContent: 'center',
-          alignItems: 'center', zIndex: 1000, padding: '20px'
-        }}>
-          <div style={{
-            background: '#1e293b', borderRadius: '16px', padding: '28px',
-            width: '100%', maxWidth: '440px', border: '1px solid #334155'
-          }}>
-            <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '18px' }}>
-              🏖️ Leave Request
-            </h3>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '440px' }}>
+            <div style={{
+              padding: '18px 24px', borderBottom: '1px solid #e5e5e5',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ color: '#111', margin: 0, fontSize: '17px', fontWeight: '800' }}>🏖️ Request Leave</h3>
+              <button onClick={() => setShowLeaveModal(false)} style={{
+                background: '#f5f5f5', border: 'none', borderRadius: '8px',
+                color: '#888', cursor: 'pointer', width: '32px', height: '32px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>✕</button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              {message && (
+                <div style={{
+                  background: message.includes('❌') ? 'rgba(215,25,32,0.08)' : 'rgba(22,163,74,0.08)',
+                  color: message.includes('❌') ? '#d71920' : '#16a34a',
+                  padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px'
+                }}>{message}</div>
+              )}
 
-            {[
-              { label: 'Start Date', key: 'start_date', type: 'date' },
-              { label: 'End Date', key: 'end_date', type: 'date' },
-              { label: 'Reason', key: 'reason', type: 'text', placeholder: 'Leave ki wajah...' },
-            ].map(field => (
-              <div key={field.key} style={{ marginBottom: '12px' }}>
-                <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                  {field.label}
-                </label>
-                <input
-                  type={field.type} value={leaveForm[field.key]}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, [field.key]: e.target.value })}
-                  placeholder={field.placeholder}
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Leave Type</label>
+                <select value={leaveForm.type}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, type: e.target.value })}
+                  className="input">
+                  <option value="annual">Annual Leave</option>
+                  <option value="sick">Sick Leave</option>
+                  <option value="casual">Casual Leave</option>
+                  <option value="unpaid">Unpaid Leave</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label className="input-label">Start Date</label>
+                  <input type="date" value={leaveForm.start_date}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                    className="input" />
+                </div>
+                <div>
+                  <label className="input-label">End Date</label>
+                  <input type="date" value={leaveForm.end_date}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                    className="input" />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label className="input-label">Reason</label>
+                <textarea value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                  placeholder="Why do you need leave?"
+                  rows={3}
                   style={{
-                    width: '100%', padding: '10px', background: '#0f172a',
-                    border: '1px solid #334155', borderRadius: '8px',
-                    color: 'white', fontSize: '13px', outline: 'none',
-                    boxSizing: 'border-box'
+                    width: '100%', padding: '10px 14px',
+                    border: '1.5px solid #e5e5e5', borderRadius: '10px',
+                    fontSize: '14px', outline: 'none', resize: 'vertical',
+                    fontFamily: 'inherit', boxSizing: 'border-box', color: '#111'
                   }}
+                  onFocus={e => e.target.style.borderColor = '#d71920'}
+                  onBlur={e => e.target.style.borderColor = '#e5e5e5'}
                 />
               </div>
-            ))}
 
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                Leave Type
-              </label>
-              <select value={leaveForm.leave_type}
-                onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
-                style={{
-                  width: '100%', padding: '10px', background: '#0f172a',
-                  border: '1px solid #334155', borderRadius: '8px',
-                  color: 'white', fontSize: '13px', outline: 'none'
-                }}>
-                <option value="annual">Annual Leave</option>
-                <option value="sick">Sick Leave</option>
-                <option value="emergency">Emergency Leave</option>
-                <option value="unpaid">Unpaid Leave</option>
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <input type="checkbox" id="informed"
-                checked={leaveForm.is_informed}
-                onChange={(e) => setLeaveForm({ ...leaveForm, is_informed: e.target.checked })}
-              />
-              <label htmlFor="informed" style={{ color: '#94a3b8', fontSize: '13px' }}>
-                Manager ko inform kiya hai
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setShowLeaveModal(false)} style={{
-                flex: 1, padding: '11px', background: '#334155',
-                border: 'none', borderRadius: '8px',
-                color: 'white', cursor: 'pointer', fontSize: '14px'
-              }}>Cancel</button>
-              <button onClick={submitLeave} style={{
-                flex: 2, padding: '11px',
-                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                border: 'none', borderRadius: '8px', color: 'white',
-                cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-              }}>Submit Request</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setShowLeaveModal(false)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                  Cancel
+                </button>
+                <button onClick={requestLeave} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>
+                  Submit Request
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -587,92 +746,72 @@ export default function Attendance({ profile }) {
 
       {/* Manual Attendance Modal */}
       {showManualModal && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', justifyContent: 'center',
-          alignItems: 'center', zIndex: 1000, padding: '20px'
-        }}>
-          <div style={{
-            background: '#1e293b', borderRadius: '16px', padding: '28px',
-            width: '100%', maxWidth: '440px', border: '1px solid #334155'
-          }}>
-            <h3 style={{ color: 'white', margin: '0 0 20px', fontSize: '18px' }}>
-              📝 Manual Attendance
-            </h3>
-
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                Employee
-              </label>
-              <select value={manualForm.employee_id}
-                onChange={(e) => setManualForm({ ...manualForm, employee_id: e.target.value })}
-                style={{
-                  width: '100%', padding: '10px', background: '#0f172a',
-                  border: '1px solid #334155', borderRadius: '8px',
-                  color: 'white', fontSize: '13px', outline: 'none'
-                }}>
-                <option value="">-- Employee Select --</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.full_name}</option>
-                ))}
-              </select>
-            </div>
-
-            {[
-              { label: 'Date', key: 'date', type: 'date' },
-              { label: 'Check In Time', key: 'check_in', type: 'time' },
-              { label: 'Check Out Time', key: 'check_out', type: 'time' },
-              { label: 'Notes', key: 'notes', type: 'text', placeholder: 'Optional notes...' },
-            ].map(field => (
-              <div key={field.key} style={{ marginBottom: '12px' }}>
-                <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                  {field.label}
-                </label>
-                <input
-                  type={field.type} value={manualForm[field.key]}
-                  onChange={(e) => setManualForm({ ...manualForm, [field.key]: e.target.value })}
-                  placeholder={field.placeholder}
-                  style={{
-                    width: '100%', padding: '10px', background: '#0f172a',
-                    border: '1px solid #334155', borderRadius: '8px',
-                    color: 'white', fontSize: '13px', outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-            ))}
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ color: '#94a3b8', fontSize: '12px', display: 'block', marginBottom: '4px' }}>
-                Status
-              </label>
-              <select value={manualForm.status}
-                onChange={(e) => setManualForm({ ...manualForm, status: e.target.value })}
-                style={{
-                  width: '100%', padding: '10px', background: '#0f172a',
-                  border: '1px solid #334155', borderRadius: '8px',
-                  color: 'white', fontSize: '13px', outline: 'none'
-                }}>
-                <option value="present">✅ Present</option>
-                <option value="late">⏰ Late</option>
-                <option value="absent">❌ Absent</option>
-                <option value="half_day">🌗 Half Day</option>
-                <option value="on_leave">🏖️ On Leave</option>
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '440px' }}>
+            <div style={{
+              padding: '18px 24px', borderBottom: '1px solid #e5e5e5',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <h3 style={{ color: '#111', margin: 0, fontSize: '17px', fontWeight: '800' }}>✏️ Manual Entry</h3>
               <button onClick={() => setShowManualModal(false)} style={{
-                flex: 1, padding: '11px', background: '#334155',
-                border: 'none', borderRadius: '8px',
-                color: 'white', cursor: 'pointer', fontSize: '14px'
-              }}>Cancel</button>
-              <button onClick={submitManualAttendance} style={{
-                flex: 2, padding: '11px',
-                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                border: 'none', borderRadius: '8px', color: 'white',
-                cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-              }}>Add Attendance</button>
+                background: '#f5f5f5', border: 'none', borderRadius: '8px',
+                color: '#888', cursor: 'pointer', width: '32px', height: '32px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>✕</button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Employee</label>
+                <select value={manualForm.employee_id}
+                  onChange={(e) => setManualForm({ ...manualForm, employee_id: e.target.value })}
+                  className="input">
+                  <option value="">-- Select Employee --</option>
+                  {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label className="input-label">Date</label>
+                <input type="date" value={manualForm.date}
+                  onChange={(e) => setManualForm({ ...manualForm, date: e.target.value })}
+                  className="input" />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label className="input-label">Check In</label>
+                  <input type="time" value={manualForm.check_in}
+                    onChange={(e) => setManualForm({ ...manualForm, check_in: e.target.value })}
+                    className="input" />
+                </div>
+                <div>
+                  <label className="input-label">Check Out</label>
+                  <input type="time" value={manualForm.check_out}
+                    onChange={(e) => setManualForm({ ...manualForm, check_out: e.target.value })}
+                    className="input" />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label className="input-label">Status</label>
+                <select value={manualForm.status}
+                  onChange={(e) => setManualForm({ ...manualForm, status: e.target.value })}
+                  className="input">
+                  <option value="present">Present</option>
+                  <option value="late">Late</option>
+                  <option value="absent">Absent</option>
+                  <option value="on_leave">On Leave</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setShowManualModal(false)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
+                  Cancel
+                </button>
+                <button onClick={addManualAttendance} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>
+                  Save Entry
+                </button>
+              </div>
             </div>
           </div>
         </div>
