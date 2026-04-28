@@ -4,10 +4,21 @@ import { supabase } from '../supabase'
 const ADMIN_STORAGE_KEY = 'admin_visible_modules'
 
 const ALL_MODULES = [
-  'dashboard', 'messages', 'projects', 'tasks',
+  'dashboard', 'messages', 'projects', 'tasks', 'files',
   'attendance', 'timetracking', 'clienttime',
-  'employees', 'payroll', 'settings'
+  'employees', 'officecalls', 'payroll', 'settings'
 ]
+
+const ROLE_DEFAULT_MODULES = {
+  admin: ALL_MODULES,
+  manager: ['dashboard', 'messages', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls'],
+  employee: ['dashboard', 'messages', 'tasks', 'attendance', 'timetracking'],
+  partner: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime', 'files'],
+  junior_editor: ['dashboard', 'messages', 'tasks', 'timetracking'],
+  senior_editor: ['dashboard', 'messages', 'projects', 'tasks', 'timetracking', 'clienttime', 'files'],
+  client_manager: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime', 'employees', 'files'],
+  qa_reviewer: ['dashboard', 'messages', 'tasks', 'projects'],
+}
 
 export function usePermissions(profile) {
   const [permissions, setPermissions] = useState({})
@@ -82,10 +93,11 @@ export function usePermissions(profile) {
       if (data && data.length > 0) {
         setUserModules(data.filter(d => d.is_visible).map(d => d.module_id))
       } else {
-        setUserModules(ALL_MODULES)
+        // Use role defaults
+        setUserModules(ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES)
       }
     } catch (e) {
-      setUserModules(ALL_MODULES)
+      setUserModules(ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES)
     }
   }
 
@@ -99,14 +111,14 @@ export function usePermissions(profile) {
 
   const subscribeToChanges = () => {
     const sub1 = supabase
-      .channel('permissions-live-v4')
+      .channel('permissions-live-v5')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'module_visibility'
       }, () => fetchPermissions())
       .subscribe()
 
     const sub2 = supabase
-      .channel('presentation-live-v4')
+      .channel('presentation-live-v5')
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'presentation_mode'
       }, (payload) => {
@@ -115,7 +127,7 @@ export function usePermissions(profile) {
       .subscribe()
 
     const sub3 = supabase
-      .channel(`user-modules-v2-${profile.id}`)
+      .channel(`user-modules-v3-${profile.id}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'user_module_visibility',
         filter: `user_id=eq.${profile.id}`
