@@ -13,6 +13,8 @@ import Projects from './pages/Projects'
 import TimeTracking from './pages/TimeTracking'
 import ClientTimeTracking from './pages/ClientTimeTracking'
 import FileManagement from './pages/FileManagement'
+import OfficeCalls from './pages/OfficeCalls'
+import OfficeBell from './components/OfficeBell'
 import GlobalSearch from './components/GlobalSearch'
 
 const LogoWhite = ({ size = 140 }) => (
@@ -93,7 +95,6 @@ function LoginPage() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', background: 'white', fontFamily: 'inherit' }}>
-      {/* Left Panel */}
       <div style={{
         flex: 1, background: 'linear-gradient(160deg, #d71920 0%, #8b0000 100%)',
         display: 'flex', flexDirection: 'column',
@@ -102,7 +103,6 @@ function LoginPage() {
       }}>
         <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', top: '40%', left: '10%', width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
 
         <div style={{ marginBottom: '32px' }}>
           <LogoWhite size={220} />
@@ -130,7 +130,6 @@ function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
       <div style={{ width: '460px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px', background: 'white' }}>
         <div style={{ width: '100%', maxWidth: '360px' }}>
           <div style={{ marginBottom: '36px' }}>
@@ -199,14 +198,12 @@ function MainApp({ session }) {
 
   useEffect(() => { getProfile() }, [])
 
-  // Ctrl+K = Global Search
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setShowSearch(prev => !prev)
       }
-      // Ctrl+Shift+A = Admin Panel
       if (profile?.role === 'admin' && e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault()
         setShowAdminPanel(prev => !prev)
@@ -247,6 +244,7 @@ function MainApp({ session }) {
       title: 'Management',
       items: [
         { id: 'employees', icon: '⬡', label: 'People' },
+        { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
         { id: 'payroll', icon: '◈', label: 'Payroll' },
       ]
     },
@@ -399,7 +397,7 @@ function MainApp({ session }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Search Button */}
+            {/* Search */}
             <button onClick={() => setShowSearch(true)} style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '6px 12px', background: '#f5f5f5',
@@ -499,6 +497,7 @@ function MainApp({ session }) {
               {activeTab === 'timetracking' && <TimeTracking profile={profile} />}
               {activeTab === 'clienttime' && <ClientTimeTracking profile={profile} />}
               {activeTab === 'files' && <FileManagement profile={profile} />}
+              {activeTab === 'officecalls' && <OfficeCalls profile={profile} />}
               {activeTab === 'settings' && <Settings profile={profile} />}
             </>
           )}
@@ -513,6 +512,9 @@ function MainApp({ session }) {
           onClose={() => setShowSearch(false)}
         />
       )}
+
+      {/* OFFICE BELL — Always Listening */}
+      <OfficeBell profile={profile} />
 
       {/* SECRET ADMIN PANEL */}
       {showAdminPanel && profile?.role === 'admin' && (
@@ -530,7 +532,6 @@ function MainApp({ session }) {
             </div>
 
             <div style={{ padding: '24px' }}>
-              {/* My Sidebar */}
               <div style={{ background: '#f9f9f9', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e5e5e5' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
@@ -550,6 +551,7 @@ function MainApp({ session }) {
                     { id: 'timetracking', icon: '⏱️', label: 'Time Logs' },
                     { id: 'clienttime', icon: '👤', label: 'Client Time' },
                     { id: 'employees', icon: '👥', label: 'People' },
+                    { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
                     { id: 'payroll', icon: '💰', label: 'Payroll' },
                     { id: 'settings', icon: '⚙️', label: 'Settings' },
                   ].map(mod => {
@@ -577,7 +579,7 @@ function MainApp({ session }) {
                     <span style={{ color: '#888', fontSize: '12px' }}>can see these modules</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: '8px' }}>
-                    {['dashboard', 'messages', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'payroll', 'settings'].map(moduleId => (
+                    {['dashboard', 'messages', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls', 'payroll', 'settings'].map(moduleId => (
                       <ModuleToggle key={`${moduleId}-${role}`} moduleId={moduleId} role={role} initialValue={getModulePermission(moduleId, role)} onToggle={toggleModule} />
                     ))}
                   </div>
@@ -611,6 +613,7 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
     tasks: '✅ Tasks', attendance: '📅 Attendance', employees: '👥 People',
     payroll: '💰 Payroll', files: '📎 Files', settings: '⚙️ Settings',
     timetracking: '⏱️ Time Logs', clienttime: '👤 Client Time',
+    officecalls: '🔔 Office Bell',
   }
 
   return (
