@@ -1,3 +1,4 @@
+import GlobalSearch from './components/GlobalSearch'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import { usePermissions } from './hooks/usePermissions'
