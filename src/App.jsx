@@ -1,4 +1,3 @@
-import GlobalSearch from './components/GlobalSearch'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import { usePermissions } from './hooks/usePermissions'
@@ -14,8 +13,8 @@ import Projects from './pages/Projects'
 import TimeTracking from './pages/TimeTracking'
 import ClientTimeTracking from './pages/ClientTimeTracking'
 import FileManagement from './pages/FileManagement'
+import GlobalSearch from './components/GlobalSearch'
 
-// Klipscen Logo — White version (for dark/red backgrounds)
 const LogoWhite = ({ size = 140 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1171.77 189.84" width={size} height={size * 189.84 / 1171.77}>
     <path fill="#fff" d="M600.65,329.72h36.4v154h72.81v29.45H600.65Z" transform="translate(-429.42 -326.25)"/>
@@ -30,7 +29,6 @@ const LogoWhite = ({ size = 140 }) => (
   </svg>
 )
 
-// Klipscen Logo — Dark version (for white/light backgrounds)
 const LogoDark = ({ size = 140 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1171.77 189.84" width={size} height={size * 189.84 / 1171.77}>
     <path fill="#111111" d="M600.65,329.72h36.4v154h72.81v29.45H600.65Z" transform="translate(-429.42 -326.25)"/>
@@ -61,10 +59,15 @@ export default function App() {
   }, [])
 
   if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f5f5f5' }}>
+    <div style={{
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
+    }}>
       <div style={{ textAlign: 'center' }}>
-        <LogoWhite size={160} />
-        <div style={{ color: '#888', fontSize: '13px', marginTop: '16px' }}>Loading...</div>
+        <LogoWhite size={200} />
+        <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', marginTop: '20px', letterSpacing: '2px' }}>
+          LOADING...
+        </div>
       </div>
     </div>
   )
@@ -93,22 +96,23 @@ function LoginPage() {
       {/* Left Panel */}
       <div style={{
         flex: 1, background: 'linear-gradient(160deg, #d71920 0%, #8b0000 100%)',
-        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        alignItems: 'center', padding: '60px', position: 'relative', overflow: 'hidden'
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', alignItems: 'center',
+        padding: '60px', position: 'relative', overflow: 'hidden'
       }}>
         <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: '40%', left: '10%', width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', pointerEvents: 'none' }} />
 
-        {/* Logo */}
         <div style={{ marginBottom: '32px' }}>
           <LogoWhite size={220} />
         </div>
 
-        <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '15px', margin: '0 0 48px', textAlign: 'center', fontWeight: '500', letterSpacing: '2px', textTransform: 'uppercase' }}>
+        <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', margin: '0 0 48px', textAlign: 'center', fontWeight: '500', letterSpacing: '3px', textTransform: 'uppercase' }}>
           Agency Operations System
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '320px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '300px' }}>
           {[
             { icon: '✦', text: 'Projects & Task Management' },
             { icon: '◷', text: 'Smart Attendance Tracking' },
@@ -117,10 +121,10 @@ function LoginPage() {
             { icon: '📎', text: 'File Version Management' },
           ].map(f => (
             <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '14px', flexShrink: 0 }}>
+              <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', flexShrink: 0 }}>
                 {f.icon}
               </div>
-              <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '14px', fontWeight: '500' }}>{f.text}</span>
+              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500' }}>{f.text}</span>
             </div>
           ))}
         </div>
@@ -143,7 +147,7 @@ function LoginPage() {
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
               <label className="input-label">Email Address</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required className="input" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@klipscen.com" required className="input" />
             </div>
             <div style={{ marginBottom: '28px' }}>
               <label className="input-label">Password</label>
@@ -181,6 +185,7 @@ function MainApp({ session }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   const {
     canAccess, isInSidebar, loading: permLoading,
@@ -194,10 +199,15 @@ function MainApp({ session }) {
 
   useEffect(() => { getProfile() }, [])
 
+  // Ctrl+K = Global Search
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (profile?.role !== 'admin') return
-      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowSearch(prev => !prev)
+      }
+      // Ctrl+Shift+A = Admin Panel
+      if (profile?.role === 'admin' && e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault()
         setShowAdminPanel(prev => !prev)
       }
@@ -301,7 +311,7 @@ function MainApp({ session }) {
               </svg>
             </div>
           ) : (
-            <div style={{ overflow: 'hidden', flex: 1 }}>
+            <div style={{ overflow: 'hidden', flex: 1, display: 'flex', alignItems: 'center' }}>
               <LogoDark size={130} />
             </div>
           )}
@@ -389,10 +399,26 @@ function MainApp({ session }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Search Button */}
+            <button onClick={() => setShowSearch(true)} style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '6px 12px', background: '#f5f5f5',
+              border: '1px solid #e5e5e5', borderRadius: '8px',
+              color: '#888', cursor: 'pointer', fontSize: '12px',
+              transition: 'all 0.2s', fontFamily: 'inherit'
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#d71920'; e.currentTarget.style.color = '#d71920' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e5e5'; e.currentTarget.style.color = '#888' }}
+            >
+              🔍 <span style={{ fontWeight: '600' }}>Search</span>
+              <span style={{ background: 'white', border: '1px solid #e5e5e5', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', color: '#bbb' }}>⌘K</span>
+            </button>
+
             <div style={{ color: '#aaa', fontSize: '12px', fontWeight: '500' }}>
               {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
 
+            {/* Notifications */}
             <div style={{ position: 'relative' }}>
               <button className="btn-icon" onClick={() => setShowNotifPanel(!showNotifPanel)} style={{ position: 'relative', color: '#666' }}>
                 🔔
@@ -441,6 +467,7 @@ function MainApp({ session }) {
               )}
             </div>
 
+            {/* Avatar */}
             <div className="avatar avatar-sm" style={{
               cursor: 'pointer', background: `${roleColor[profile?.role] || '#d71920'}20`,
               color: roleColor[profile?.role] || '#d71920',
@@ -478,6 +505,15 @@ function MainApp({ session }) {
         </div>
       </div>
 
+      {/* GLOBAL SEARCH */}
+      {showSearch && (
+        <GlobalSearch
+          profile={profile}
+          setActiveTab={setActiveTab}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
+
       {/* SECRET ADMIN PANEL */}
       {showAdminPanel && profile?.role === 'admin' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(6px)' }}
@@ -488,17 +524,18 @@ function MainApp({ session }) {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #e5e5e5', background: 'linear-gradient(135deg, #d71920, #8b0000)', borderRadius: '20px 20px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h2 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: '800' }}>Visibility Control</h2>
-                <p style={{ color: 'rgba(255,255,255,0.7)', margin: '4px 0 0', fontSize: '12px' }}>Ctrl+Shift+A to open/close</p>
+                <p style={{ color: 'rgba(255,255,255,0.7)', margin: '4px 0 0', fontSize: '12px' }}>Ctrl+Shift+A to toggle</p>
               </div>
               <button onClick={() => setShowAdminPanel(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>✕</button>
             </div>
 
             <div style={{ padding: '24px' }}>
+              {/* My Sidebar */}
               <div style={{ background: '#f9f9f9', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e5e5e5' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
                     <div style={{ color: '#111', fontWeight: '700', fontSize: '14px' }}>My Sidebar</div>
-                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>Toggle what YOU see — perfect for screen sharing</div>
+                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>Toggle what YOU see</div>
                   </div>
                   <button onClick={showAllModules} style={{ background: 'white', border: '1px solid #e5e5e5', borderRadius: '6px', padding: '5px 12px', color: '#666', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>Reset All</button>
                 </div>
@@ -529,7 +566,9 @@ function MainApp({ session }) {
                 </div>
               </div>
 
-              <div style={{ color: '#bbb', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Partner & Employee Permissions</div>
+              <div style={{ color: '#bbb', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>
+                Partner & Employee Permissions
+              </div>
 
               {['partner', 'employee'].map(role => (
                 <div key={role} style={{ background: '#f9f9f9', borderRadius: '12px', padding: '16px', marginBottom: '12px', border: '1px solid #e5e5e5' }}>
