@@ -167,3 +167,32 @@ export default function OfficeBell({ profile }) {
     </div>
   )
 }
+useEffect(() => {
+  if (!profile?.id) return
+  console.log('🔔 OfficeBell listening for:', profile.id, profile.full_name)
+  checkActiveCalls()
+
+  const sub = supabase
+    .channel(`bell-${profile.id}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'office_calls',
+      filter: `receiver_id=eq.${profile.id}`
+    }, async (payload) => {
+      console.log('🔔 INCOMING CALL:', payload)
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', payload.new.caller_id)
+        .single()
+      setCallerName(data?.full_name || 'Someone')
+      setIncomingCall(payload.new)
+      playBell()
+    })
+    .subscribe((status) => {
+      console.log('🔔 Bell subscription:', status)
+    })
+
+  return () => sub.unsubscribe()
+}, [profile?.id])
