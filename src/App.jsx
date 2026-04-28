@@ -14,6 +14,8 @@ import TimeTracking from './pages/TimeTracking'
 import ClientTimeTracking from './pages/ClientTimeTracking'
 import FileManagement from './pages/FileManagement'
 import OfficeCalls from './pages/OfficeCalls'
+import Reports from './pages/Reports'
+import Announcements from './pages/Announcements'
 import OfficeBell from './components/OfficeBell'
 import GlobalSearch from './components/GlobalSearch'
 
@@ -97,21 +99,15 @@ function LoginPage() {
     <div style={{ minHeight: '100vh', display: 'flex', background: 'white', fontFamily: 'inherit' }}>
       <div style={{
         flex: 1, background: 'linear-gradient(160deg, #d71920 0%, #8b0000 100%)',
-        display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        padding: '60px', position: 'relative', overflow: 'hidden'
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        alignItems: 'center', padding: '60px', position: 'relative', overflow: 'hidden'
       }}>
         <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
-
-        <div style={{ marginBottom: '32px' }}>
-          <LogoWhite size={220} />
-        </div>
-
+        <div style={{ marginBottom: '32px' }}><LogoWhite size={220} /></div>
         <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', margin: '0 0 48px', textAlign: 'center', fontWeight: '500', letterSpacing: '3px', textTransform: 'uppercase' }}>
           Agency Operations System
         </p>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '300px' }}>
           {[
             { icon: '✦', text: 'Projects & Task Management' },
@@ -121,9 +117,7 @@ function LoginPage() {
             { icon: '📎', text: 'File Version Management' },
           ].map(f => (
             <div key={f.text} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', flexShrink: 0 }}>
-                {f.icon}
-              </div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', flexShrink: 0 }}>{f.icon}</div>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500' }}>{f.text}</span>
             </div>
           ))}
@@ -136,13 +130,11 @@ function LoginPage() {
             <h2 style={{ color: '#111', fontSize: '26px', fontWeight: '800', margin: '0 0 8px', letterSpacing: '-0.5px' }}>Welcome back</h2>
             <p style={{ color: '#888', margin: 0, fontSize: '14px' }}>Sign in to your account to continue</p>
           </div>
-
           {error && (
             <div style={{ background: 'rgba(215,25,32,0.08)', border: '1px solid rgba(215,25,32,0.2)', color: '#d71920', padding: '12px 14px', borderRadius: '10px', marginBottom: '20px', fontSize: '13px', display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span>⚠️</span> {error}
             </div>
           )}
-
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
               <label className="input-label">Email Address</label>
@@ -227,6 +219,7 @@ function MainApp({ session }) {
       items: [
         { id: 'dashboard', icon: '⬡', label: 'Dashboard' },
         { id: 'messages', icon: '💬', label: 'Messages' },
+        { id: 'announcements', icon: '📢', label: 'Announcements' },
       ]
     },
     {
@@ -245,6 +238,7 @@ function MainApp({ session }) {
       items: [
         { id: 'employees', icon: '⬡', label: 'People' },
         { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
+        { id: 'reports', icon: '📊', label: 'Reports' },
         { id: 'payroll', icon: '◈', label: 'Payroll' },
       ]
     },
@@ -328,9 +322,7 @@ function MainApp({ session }) {
                 <button key={item.id} onClick={() => setActiveTab(item.id)}
                   className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
                   style={{ justifyContent: sidebarCollapsed ? 'center' : 'flex-start', padding: sidebarCollapsed ? '10px' : '9px 12px' }}>
-                  <span style={{ fontSize: '16px', flexShrink: 0, color: activeTab === item.id ? '#d71920' : '#999' }}>
-                    {item.icon}
-                  </span>
+                  <span style={{ fontSize: '16px', flexShrink: 0, color: activeTab === item.id ? '#d71920' : '#999' }}>{item.icon}</span>
                   {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap', fontSize: '13px' }}>{item.label}</span>}
                 </button>
               ))}
@@ -359,9 +351,7 @@ function MainApp({ session }) {
                 {profile.full_name?.charAt(0).toUpperCase()}
               </div>
               <div style={{ overflow: 'hidden', flex: 1 }}>
-                <div style={{ color: '#111', fontSize: '13px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {profile.full_name}
-                </div>
+                <div style={{ color: '#111', fontSize: '13px', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.full_name}</div>
                 <div style={{ color: roleColor[profile.role] || '#d71920', fontSize: '10px', textTransform: 'capitalize', fontWeight: '600' }}>
                   {profile.role?.replace('_', ' ')}
                 </div>
@@ -498,6 +488,8 @@ function MainApp({ session }) {
               {activeTab === 'clienttime' && <ClientTimeTracking profile={profile} />}
               {activeTab === 'files' && <FileManagement profile={profile} />}
               {activeTab === 'officecalls' && <OfficeCalls profile={profile} />}
+              {activeTab === 'reports' && <Reports profile={profile} />}
+              {activeTab === 'announcements' && <Announcements profile={profile} />}
               {activeTab === 'settings' && <Settings profile={profile} />}
             </>
           )}
@@ -506,14 +498,10 @@ function MainApp({ session }) {
 
       {/* GLOBAL SEARCH */}
       {showSearch && (
-        <GlobalSearch
-          profile={profile}
-          setActiveTab={setActiveTab}
-          onClose={() => setShowSearch(false)}
-        />
+        <GlobalSearch profile={profile} setActiveTab={setActiveTab} onClose={() => setShowSearch(false)} />
       )}
 
-      {/* OFFICE BELL — Always Listening */}
+      {/* OFFICE BELL */}
       <OfficeBell profile={profile} />
 
       {/* SECRET ADMIN PANEL */}
@@ -532,6 +520,7 @@ function MainApp({ session }) {
             </div>
 
             <div style={{ padding: '24px' }}>
+              {/* My Sidebar */}
               <div style={{ background: '#f9f9f9', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e5e5e5' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <div>
@@ -544,6 +533,7 @@ function MainApp({ session }) {
                   {[
                     { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
                     { id: 'messages', icon: '💬', label: 'Messages' },
+                    { id: 'announcements', icon: '📢', label: 'Announcements' },
                     { id: 'projects', icon: '📁', label: 'Projects' },
                     { id: 'tasks', icon: '✅', label: 'Tasks' },
                     { id: 'files', icon: '📎', label: 'Files' },
@@ -552,6 +542,7 @@ function MainApp({ session }) {
                     { id: 'clienttime', icon: '👤', label: 'Client Time' },
                     { id: 'employees', icon: '👥', label: 'People' },
                     { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
+                    { id: 'reports', icon: '📊', label: 'Reports' },
                     { id: 'payroll', icon: '💰', label: 'Payroll' },
                     { id: 'settings', icon: '⚙️', label: 'Settings' },
                   ].map(mod => {
@@ -579,7 +570,7 @@ function MainApp({ session }) {
                     <span style={{ color: '#888', fontSize: '12px' }}>can see these modules</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: '8px' }}>
-                    {['dashboard', 'messages', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls', 'payroll', 'settings'].map(moduleId => (
+                    {['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls', 'reports', 'payroll', 'settings'].map(moduleId => (
                       <ModuleToggle key={`${moduleId}-${role}`} moduleId={moduleId} role={role} initialValue={getModulePermission(moduleId, role)} onToggle={toggleModule} />
                     ))}
                   </div>
@@ -613,7 +604,8 @@ function ModuleToggle({ moduleId, role, onToggle, initialValue }) {
     tasks: '✅ Tasks', attendance: '📅 Attendance', employees: '👥 People',
     payroll: '💰 Payroll', files: '📎 Files', settings: '⚙️ Settings',
     timetracking: '⏱️ Time Logs', clienttime: '👤 Client Time',
-    officecalls: '🔔 Office Bell',
+    officecalls: '🔔 Office Bell', reports: '📊 Reports',
+    announcements: '📢 Announcements',
   }
 
   return (
