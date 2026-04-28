@@ -1,16 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 
+let swRegistration = null
+
+// Register service worker
+const registerSW = async () => {
+  if ('serviceWorker' in navigator) {
+    try {
+      swRegistration = await navigator.serviceWorker.register('/sw.js')
+      console.log('SW registered')
+    } catch (e) {
+      console.log('SW failed:', e)
+    }
+  }
+}
+
+registerSW()
+
 export default function OfficeBell({ profile }) {
   const [incomingCall, setIncomingCall] = useState(null)
   const [callerName, setCallerName] = useState('')
   const bellIntervalRef = useRef(null)
-  const audioCtxRef = useRef(null)
 
   useEffect(() => {
     if (!profile?.id) return
 
-    // Request notification permission
+    // Request permissions
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
     }
@@ -18,7 +33,7 @@ export default function OfficeBell({ profile }) {
     checkActiveCalls()
 
     const sub = supabase
-      .channel(`bell-${profile.id}`)
+      .channel(`bell-${profile.id}-v2`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -35,25 +50,19 @@ export default function OfficeBell({ profile }) {
           const name = data?.full_name || 'Someone'
           setCallerName(name)
           setIncomingCall(payload.new)
-          startBellLoop()
-          showBrowserNotification(name)
-        } catch (e) {
-          console.error('Bell error:', e)
-        }
+          triggerAlert(name)
+        } catch (e) {}
       })
       .subscribe()
 
     return () => {
       sub?.unsubscribe()
-      stopBellLoop()
+      stopBell()
     }
   }, [profile?.id])
 
-  // Stop bell when call is answered/dismissed
   useEffect(() => {
-    if (!incomingCall) {
-      stopBellLoop()
-    }
+    if (!incomingCall) stopBell()
   }, [incomingCall])
 
   const checkActiveCalls = async () => {
@@ -68,21 +77,38 @@ export default function OfficeBell({ profile }) {
 
       if (data && data.length > 0) {
         setIncomingCall(data[0])
-        setCallerName(data[0].caller?.full_name || 'Someone')
-        startBellLoop()
-        showBrowserNotification(data[0].caller?.full_name || 'Someone')
+        const name = data[0].caller?.full_name || 'Someone'
+        setCallerName(name)
+        triggerAlert(name)
       }
     } catch (e) {}
   }
 
-  const showBrowserNotification = (name) => {
+  const triggerAlert = (name) => {
+    // 1. Start sound loop
+    startBell()
+
+    // 2. Browser Notification (shows even on other tabs)
+    showNotification(name)
+
+    // 3. Service Worker notification (shows even if tab not active)
+    sendToServiceWorker(name)
+
+    // 4. Try to focus window
+    try { window.focus() } catch (e) {}
+  }
+
+  const showNotification = (name) => {
     try {
       if ('Notification' in window && Notification.permission === 'granted') {
-        const notif = new Notification('🔔 Office Bell!', {
-          body: `${name} is calling you to the office`,
+        // Close previous
+        const notif = new Notification('🔔 Office Bell — Attention Required!', {
+          body: `${name} is calling you to the office. Click to respond.`,
           icon: '/favicon.ico',
-          requireInteraction: true, // stays until user interacts
-          tag: 'office-bell' // replace existing notification
+          requireInteraction: true,
+          tag: 'office-bell',
+          renotify: true,
+          silent: false
         })
         notif.onclick = () => {
           window.focus()
@@ -92,12 +118,21 @@ export default function OfficeBell({ profile }) {
     } catch (e) {}
   }
 
+  const sendToServiceWorker = (name) => {
+    try {
+      if (swRegistration?.active) {
+        swRegistration.active.postMessage({
+          type: 'SHOW_BELL',
+          callerName: name
+        })
+      }
+    } catch (e) {}
+  }
+
   const playBellOnce = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)()
-      audioCtxRef.current = ctx
-
-      const playTone = (freq, start, dur, vol = 0.3) => {
+      const playTone = (freq, start, dur, vol = 0.4) => {
         const o = ctx.createOscillator()
         const g = ctx.createGain()
         o.connect(g); g.connect(ctx.destination)
@@ -107,46 +142,33 @@ export default function OfficeBell({ profile }) {
         o.start(ctx.currentTime + start)
         o.stop(ctx.currentTime + start + dur)
       }
-
-      // Bell pattern: ding dong ding dong
-      playTone(1320, 0.0, 0.5, 0.4)
-      playTone(1100, 0.2, 0.4, 0.3)
-      playTone(1320, 0.8, 0.5, 0.4)
-      playTone(1100, 1.0, 0.4, 0.3)
+      playTone(1320, 0.0, 0.5)
+      playTone(1100, 0.2, 0.4)
+      playTone(1320, 0.9, 0.5)
+      playTone(1100, 1.1, 0.4)
     } catch (e) {}
   }
 
-  const startBellLoop = () => {
-    stopBellLoop() // clear any existing
+  const startBell = () => {
+    stopBell()
     playBellOnce()
-    // Repeat every 3 seconds
-    bellIntervalRef.current = setInterval(() => {
-      playBellOnce()
-    }, 3000)
+    bellIntervalRef.current = setInterval(playBellOnce, 3000)
   }
 
-  const stopBellLoop = () => {
+  const stopBell = () => {
     if (bellIntervalRef.current) {
       clearInterval(bellIntervalRef.current)
       bellIntervalRef.current = null
     }
-    try {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close()
-        audioCtxRef.current = null
-      }
-    } catch (e) {}
   }
 
   const respond = async (status) => {
     if (!incomingCall) return
-    stopBellLoop()
+    stopBell()
     try {
-      await supabase.from('office_calls').update({ status }).eq('id', incomingCall.id)
-      // Close browser notification if open
-      if ('Notification' in window) {
-        // Can't directly close but tag will replace it
-      }
+      await supabase.from('office_calls')
+        .update({ status })
+        .eq('id', incomingCall.id)
     } catch (e) {}
     setIncomingCall(null)
     setCallerName('')
@@ -161,60 +183,50 @@ export default function OfficeBell({ profile }) {
       display: 'flex', flexDirection: 'column',
       justifyContent: 'center', alignItems: 'center',
     }}>
-      {/* Pulse Rings */}
-      <div style={{ position: 'relative', marginBottom: '48px' }}>
-        {[1, 2, 3].map(i => (
-          <div key={i} style={{
-            position: 'absolute',
-            width: `${120 + i * 60}px`,
-            height: `${120 + i * 60}px`,
-            borderRadius: '50%',
-            border: `2px solid rgba(215,25,32,${0.5 - i * 0.12})`,
-            top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
-            animation: `pulse ${1 + i * 0.4}s ease-in-out infinite`
-          }} />
-        ))}
-        <div style={{
-          width: '120px', height: '120px', borderRadius: '50%',
-          background: 'linear-gradient(135deg, #d71920, #8b0000)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '56px', position: 'relative', zIndex: 1,
-          boxShadow: '0 0 50px rgba(215,25,32,0.7)',
-          animation: 'redGlow 1s infinite'
-        }}>🔔</div>
-      </div>
+      {[1, 2, 3].map(i => (
+        <div key={i} style={{
+          position: 'absolute',
+          width: `${120 + i * 70}px`,
+          height: `${120 + i * 70}px`,
+          borderRadius: '50%',
+          border: `2px solid rgba(215,25,32,${0.5 - i * 0.12})`,
+          top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          animation: `pulse ${1 + i * 0.4}s ease-in-out infinite`
+        }} />
+      ))}
+
+      <div style={{
+        width: '130px', height: '130px', borderRadius: '50%',
+        background: 'linear-gradient(135deg, #d71920, #8b0000)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '60px', position: 'relative', zIndex: 1,
+        boxShadow: '0 0 60px rgba(215,25,32,0.8)',
+        marginBottom: '48px',
+        animation: 'redGlow 0.8s infinite'
+      }}>🔔</div>
 
       <div style={{ textAlign: 'center', marginBottom: '52px' }}>
-        <div style={{
-          color: 'rgba(255,255,255,0.5)', fontSize: '12px',
-          fontWeight: '600', letterSpacing: '5px',
-          textTransform: 'uppercase', marginBottom: '16px'
-        }}>
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', fontWeight: '600', letterSpacing: '5px', textTransform: 'uppercase', marginBottom: '16px' }}>
           You're being called
         </div>
-        <div style={{
-          color: 'white', fontSize: '42px', fontWeight: '800',
-          letterSpacing: '-1px', marginBottom: '10px'
-        }}>
+        <div style={{ color: 'white', fontSize: '44px', fontWeight: '800', letterSpacing: '-1px', marginBottom: '10px' }}>
           {callerName}
         </div>
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '16px' }}>
+        <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '17px' }}>
           is calling you to the office
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: '20px' }}>
         <button onClick={() => respond('coming')} style={{
-          padding: '18px 52px', borderRadius: '50px',
+          padding: '18px 56px', borderRadius: '50px',
           background: 'linear-gradient(135deg, #16a34a, #15803d)',
-          border: 'none', color: 'white',
-          fontSize: '18px', fontWeight: '800',
-          cursor: 'pointer',
-          boxShadow: '0 6px 28px rgba(22,163,74,0.5)',
+          border: 'none', color: 'white', fontSize: '18px', fontWeight: '800',
+          cursor: 'pointer', boxShadow: '0 6px 30px rgba(22,163,74,0.5)',
           transition: 'all 0.2s'
         }}
-          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px) scale(1.03)'}
+          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
           onMouseLeave={e => e.currentTarget.style.transform = 'none'}
         >
           ✅ Coming!
@@ -222,9 +234,8 @@ export default function OfficeBell({ profile }) {
         <button onClick={() => respond('dismissed')} style={{
           padding: '18px 44px', borderRadius: '50px',
           background: 'rgba(255,255,255,0.07)',
-          border: '1px solid rgba(255,255,255,0.18)',
-          color: 'rgba(255,255,255,0.65)',
-          fontSize: '18px', fontWeight: '700',
+          border: '1px solid rgba(255,255,255,0.2)',
+          color: 'rgba(255,255,255,0.6)', fontSize: '18px', fontWeight: '700',
           cursor: 'pointer', transition: 'all 0.2s'
         }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.13)'}
@@ -234,10 +245,7 @@ export default function OfficeBell({ profile }) {
         </button>
       </div>
 
-      <div style={{
-        position: 'absolute', bottom: '32px',
-        color: 'rgba(255,255,255,0.2)', fontSize: '12px'
-      }}>
+      <div style={{ position: 'absolute', bottom: '32px', color: 'rgba(255,255,255,0.2)', fontSize: '12px' }}>
         {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
       </div>
     </div>
