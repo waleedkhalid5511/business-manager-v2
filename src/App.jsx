@@ -236,7 +236,7 @@ function MainApp({ session }) {
     {
       title: 'Management',
       items: [
-        { id: 'employees', icon: '⬡', label: 'People' },
+        { id: 'employees', icon: '⬡', label: 'Employees' },
         { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
         { id: 'reports', icon: '📊', label: 'Reports' },
         { id: 'payroll', icon: '◈', label: 'Payroll' },
