@@ -433,7 +433,7 @@ export default function Reports({ profile }) {
                   { label: 'Total Members', value: employees.length, color: '#2563eb' },
                   { label: 'Tasks Done', value: tasks.filter(t => t.status === 'done').length, color: '#16a34a' },
                   { label: 'Hours Logged', value: formatDuration(totalTimeLogged), color: '#7c3aed' },
-                  { label: 'Avg Completion', value: `${employees.length > 0 ? Math.round(employees.reduce((sum, emp) => sum + getEmployeeStats(emp.id).completion, 0) / employees.length : 0}%`, color: '#d97706' },
+                 { label: 'Avg Completion', value: `${employees.length > 0 ? Math.round(employees.reduce((sum, emp) => sum + getEmployeeStats(emp.id).completion, 0) / employees.length) : 0}%`, color: '#d97706' },
                 ].map(stat => (
                   <div key={stat.label} style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', border: `1px solid ${stat.color}22` }}>
                     <div style={{ color: stat.color, fontSize: '20px', fontWeight: '800' }}>{stat.value}</div>
