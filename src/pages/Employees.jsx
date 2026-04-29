@@ -20,12 +20,16 @@ const DEPARTMENTS = [
 const ALL_MODULES = [
   { id: 'dashboard', icon: '🏠', label: 'Dashboard' },
   { id: 'messages', icon: '💬', label: 'Messages' },
+  { id: 'announcements', icon: '📢', label: 'Announcements' },
   { id: 'projects', icon: '📁', label: 'Projects' },
   { id: 'tasks', icon: '✅', label: 'Tasks' },
+  { id: 'files', icon: '📎', label: 'Files' },
   { id: 'attendance', icon: '📅', label: 'Attendance' },
   { id: 'timetracking', icon: '⏱️', label: 'Time Logs' },
   { id: 'clienttime', icon: '👤', label: 'Client Time' },
   { id: 'employees', icon: '👥', label: 'People' },
+  { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
+  { id: 'reports', icon: '📊', label: 'Reports' },
   { id: 'payroll', icon: '💰', label: 'Payroll' },
   { id: 'settings', icon: '⚙️', label: 'Settings' },
 ]
