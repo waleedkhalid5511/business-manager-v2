@@ -93,37 +93,25 @@ export default function Employees({ profile }) {
   }, [form.role])
 
   const fetchEmployees = async () => {
-    setLoading(true)
-    try {
-      let query = supabase.from('profiles').select('*').order('created_at', { ascending: false })
-      if (filterRole !== 'all') query = query.eq('role', filterRole)
-      if (filterDept !== 'all') query = query.eq('department', filterDept)
+  setLoading(true)
+  try {
+    let query = supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-      const { data, error } = await query
-      if (error) throw error
-      setEmployees(data || [])
+    if (filterRole !== 'all') query = query.eq('role', filterRole)
+    if (filterDept !== 'all') query = query.eq('department', filterDept)
 
-      if (data && data.length > 0) {
-        const { data: tasks } = await supabase.from('tasks').select('assigned_to, status')
-        if (tasks) {
-          const stats = {}
-          data.forEach(emp => {
-            const empTasks = tasks.filter(t => t.assigned_to === emp.id)
-            stats[emp.id] = {
-              total: empTasks.length,
-              done: empTasks.filter(t => t.status === 'done').length,
-              inProgress: empTasks.filter(t => t.status === 'in_progress').length,
-            }
-          })
-          setTaskStats(stats)
-        }
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
+    // ✅ Sirf active employees dikhao by default
+    query = query.eq('is_active', true)
+
+    const { data, error } = await query
+    if (error) throw error
+    setEmployees(data || [])
+    // ... rest same
   }
+}
 
   const handleSubmit = async () => {
     if (!form.full_name || !form.email) {
