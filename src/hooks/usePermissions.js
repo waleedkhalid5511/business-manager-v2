@@ -4,20 +4,20 @@ import { supabase } from '../supabase'
 const ADMIN_STORAGE_KEY = 'admin_visible_modules'
 
 const ALL_MODULES = [
-  'dashboard', 'messages', 'projects', 'tasks', 'files',
-  'attendance', 'timetracking', 'clienttime',
-  'employees', 'officecalls', 'payroll', 'settings'
+  'dashboard', 'messages', 'announcements', 'projects', 'tasks',
+  'files', 'attendance', 'timetracking', 'clienttime',
+  'employees', 'officecalls', 'reports', 'payroll', 'settings'
 ]
 
 const ROLE_DEFAULT_MODULES = {
   admin: ALL_MODULES,
-  manager: ['dashboard', 'messages', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls'],
-  employee: ['dashboard', 'messages', 'tasks', 'attendance', 'timetracking'],
-  partner: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime', 'files'],
-  junior_editor: ['dashboard', 'messages', 'tasks', 'timetracking'],
-  senior_editor: ['dashboard', 'messages', 'projects', 'tasks', 'timetracking', 'clienttime', 'files'],
-  client_manager: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime', 'employees', 'files'],
-  qa_reviewer: ['dashboard', 'messages', 'tasks', 'projects'],
+  manager: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls', 'reports'],
+  employee: ['dashboard', 'messages', 'announcements', 'tasks', 'attendance', 'timetracking', 'settings'],
+  partner: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'clienttime', 'files'],
+  junior_editor: ['dashboard', 'messages', 'announcements', 'tasks', 'timetracking', 'settings'],
+  senior_editor: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'timetracking', 'clienttime', 'files', 'settings'],
+  client_manager: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'clienttime', 'employees', 'settings'],
+  qa_reviewer: ['dashboard', 'messages', 'announcements', 'tasks', 'projects', 'settings'],
 }
 
 export function usePermissions(profile) {
@@ -37,8 +37,14 @@ export function usePermissions(profile) {
       if (profile.role === 'admin') {
         try {
           const saved = localStorage.getItem(ADMIN_STORAGE_KEY)
-          if (saved) setAdminVisibleModules(JSON.parse(saved))
-          else setAdminVisibleModules(ALL_MODULES)
+          if (saved) {
+            const parsed = JSON.parse(saved)
+            // Make sure new modules are included
+            const merged = [...new Set([...parsed, ...ALL_MODULES.filter(m => !parsed.includes(m))])]
+            setAdminVisibleModules(merged)
+          } else {
+            setAdminVisibleModules(ALL_MODULES)
+          }
         } catch {
           setAdminVisibleModules(ALL_MODULES)
         }
@@ -154,8 +160,8 @@ export function usePermissions(profile) {
       return userModules.includes(moduleId)
     }
 
-    if (permissions[moduleId]?.inSidebar === false) return false
-    return true
+    const roleDefaults = ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES
+    return roleDefaults.includes(moduleId)
   }
 
   const canAccess = (moduleId) => {
@@ -169,8 +175,8 @@ export function usePermissions(profile) {
       return userModules.includes(moduleId)
     }
 
-    if (permissions[moduleId]?.inDom === false) return false
-    return true
+    const roleDefaults = ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES
+    return roleDefaults.includes(moduleId)
   }
 
   const toggleAdminModule = (moduleId) => {
