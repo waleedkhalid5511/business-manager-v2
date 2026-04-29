@@ -329,7 +329,7 @@ export default function Dashboard({ profile, setActiveTab }) {
                   const typeColor = { info: '#2563eb', warning: '#d97706', success: '#16a34a', urgent: '#d71920' }
                   const typeIcon = { info: 'ℹ️', warning: '⚠️', success: '✅', urgent: '🚨' }
                   return (
-                    <div key={ann.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-light)', borderLeft: `3px solid ${typeColor[ann.type] || '#888'}' }}>
+                    <div key={ann.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-light)', borderLeft: `3px solid ${typeColor[ann.type] || '#888'}` }}>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                         <span style={{ fontSize: '14px', flexShrink: 0 }}>{typeIcon[ann.type] || 'ℹ️'}</span>
                         <div>
