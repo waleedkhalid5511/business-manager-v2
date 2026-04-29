@@ -27,23 +27,22 @@ const ALL_MODULES = [
   { id: 'attendance', icon: '📅', label: 'Attendance' },
   { id: 'timetracking', icon: '⏱️', label: 'Time Logs' },
   { id: 'clienttime', icon: '👤', label: 'Client Time' },
-  { id: 'employees', icon: '👥', label: 'People' },
+  { id: 'employees', icon: '👥', label: 'Employees' },
   { id: 'officecalls', icon: '🔔', label: 'Office Bell' },
   { id: 'reports', icon: '📊', label: 'Reports' },
   { id: 'payroll', icon: '💰', label: 'Payroll' },
   { id: 'settings', icon: '⚙️', label: 'Settings' },
 ]
 
-// Default modules per role
 const ROLE_DEFAULT_MODULES = {
   admin: ALL_MODULES.map(m => m.id),
-  manager: ['dashboard', 'messages', 'projects', 'tasks', 'attendance', 'timetracking', 'clienttime', 'employees'],
-  employee: ['dashboard', 'messages', 'tasks', 'attendance', 'timetracking'],
-  partner: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime'],
-  junior_editor: ['dashboard', 'messages', 'tasks', 'timetracking'],
-  senior_editor: ['dashboard', 'messages', 'projects', 'tasks', 'timetracking', 'clienttime'],
-  client_manager: ['dashboard', 'messages', 'projects', 'tasks', 'clienttime', 'employees'],
-  qa_reviewer: ['dashboard', 'messages', 'tasks', 'projects'],
+  manager: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'files', 'attendance', 'timetracking', 'clienttime', 'employees', 'officecalls', 'reports'],
+  employee: ['dashboard', 'messages', 'announcements', 'tasks', 'attendance', 'timetracking', 'settings'],
+  partner: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'clienttime', 'files'],
+  junior_editor: ['dashboard', 'messages', 'announcements', 'tasks', 'timetracking', 'settings'],
+  senior_editor: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'timetracking', 'clienttime', 'files', 'settings'],
+  client_manager: ['dashboard', 'messages', 'announcements', 'projects', 'tasks', 'clienttime', 'employees', 'settings'],
+  qa_reviewer: ['dashboard', 'messages', 'announcements', 'tasks', 'projects', 'settings'],
 }
 
 export default function Employees({ profile }) {
@@ -52,6 +51,7 @@ export default function Employees({ profile }) {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
+  const [showInactive, setShowInactive] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showDetail, setShowDetail] = useState(null)
   const [editEmployee, setEditEmployee] = useState(null)
@@ -66,6 +66,7 @@ export default function Employees({ profile }) {
   })
 
   const isAdmin = profile?.role === 'admin'
+  const isManager = profile?.role === 'manager'
 
   useEffect(() => {
     if (!profile) return
@@ -77,7 +78,7 @@ export default function Employees({ profile }) {
       .subscribe()
 
     return () => sub.unsubscribe()
-  }, [profile, filterRole, filterDept])
+  }, [profile, filterRole, filterDept, showInactive])
 
   useEffect(() => {
     if (message) {
@@ -86,66 +87,72 @@ export default function Employees({ profile }) {
     }
   }, [message])
 
-  // When role changes, set default modules
   useEffect(() => {
     const defaults = ROLE_DEFAULT_MODULES[form.role] || ['dashboard', 'messages', 'tasks']
     setSelectedModules(defaults)
   }, [form.role])
 
   const fetchEmployees = async () => {
-  setLoading(true)
-  try {
-    let query = supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
+    setLoading(true)
+    try {
+      let query = supabase
+        .from('profiles')
+        .select('*')
+        .order('full_name', { ascending: true })
 
-    if (filterRole !== 'all') query = query.eq('role', filterRole)
-    if (filterDept !== 'all') query = query.eq('department', filterDept)
+      if (filterRole !== 'all') query = query.eq('role', filterRole)
+      if (filterDept !== 'all') query = query.eq('department', filterDept)
+      if (!showInactive) query = query.eq('is_active', true)
 
-    // ✅ Sirf active employees dikhao by default
-    query = query.eq('is_active', true)
+      const { data, error } = await query
+      if (error) throw error
+      setEmployees(data || [])
 
-    const { data, error } = await query
-    if (error) throw error
-    setEmployees(data || [])
-    // ... rest same
+      if (data && data.length > 0) {
+        const { data: tasks } = await supabase.from('tasks').select('assigned_to, status')
+        if (tasks) {
+          const stats = {}
+          data.forEach(emp => {
+            const empTasks = tasks.filter(t => t.assigned_to === emp.id)
+            stats[emp.id] = {
+              total: empTasks.length,
+              done: empTasks.filter(t => t.status === 'done').length,
+              inProgress: empTasks.filter(t => t.status === 'in_progress').length,
+            }
+          })
+          setTaskStats(stats)
+        }
+      }
+    } catch (e) {
+      console.error('fetchEmployees error:', e)
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
   const handleSubmit = async () => {
     if (!form.full_name || !form.email) {
       setMessage('❌ Name and email required!')
       return
     }
-
     setCreating(true)
-
     try {
       if (editEmployee) {
-        // Update existing employee
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            full_name: form.full_name,
-            phone: form.phone,
-            department: form.department,
-            designation: form.designation,
-            role: form.role,
-            base_salary: parseFloat(form.base_salary) || 0,
-          })
-          .eq('id', editEmployee.id)
-
+        const { error } = await supabase.from('profiles').update({
+          full_name: form.full_name,
+          phone: form.phone,
+          department: form.department,
+          designation: form.designation,
+          role: form.role,
+          base_salary: parseFloat(form.base_salary) || 0,
+        }).eq('id', editEmployee.id)
         if (error) throw error
 
-        // Update module visibility
         await saveModuleVisibility(editEmployee.id)
         setMessage('✅ Employee updated!')
         fetchEmployees()
         closeModal()
-
       } else {
-        // Create new user via Edge Function
         if (!form.password || form.password.length < 6) {
           setMessage('❌ Password must be at least 6 characters!')
           setCreating(false)
@@ -191,9 +198,7 @@ export default function Employees({ profile }) {
       module_id: m.id,
       is_visible: selectedModules.includes(m.id)
     }))
-
-    await supabase
-      .from('user_module_visibility')
+    await supabase.from('user_module_visibility')
       .upsert(visibilityData, { onConflict: 'user_id,module_id' })
   }
 
@@ -206,20 +211,47 @@ export default function Employees({ profile }) {
     if (data && data.length > 0) {
       setSelectedModules(data.filter(d => d.is_visible).map(d => d.module_id))
     } else {
-      // Use role defaults
       setSelectedModules(ROLE_DEFAULT_MODULES[emp.role] || ['dashboard', 'messages', 'tasks'])
     }
   }
 
   const toggleActive = async (emp) => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_active: !emp.is_active })
-      .eq('id', emp.id)
-    if (!error) {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: !emp.is_active })
+        .eq('id', emp.id)
+
+      if (error) throw error
       setMessage(`✅ ${emp.full_name} ${!emp.is_active ? 'activated' : 'deactivated'}!`)
       fetchEmployees()
-      if (showDetail?.id === emp.id) setShowDetail(prev => ({ ...prev, is_active: !emp.is_active }))
+      if (showDetail?.id === emp.id) {
+        setShowDetail(prev => ({ ...prev, is_active: !emp.is_active }))
+      }
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    }
+  }
+
+  const deleteEmployee = async (emp) => {
+    if (!window.confirm(`Delete ${emp.full_name}? Their past data will be kept but they will be removed from the system.`)) return
+    try {
+      // Soft delete — deactivate + clear sensitive info
+      const { error } = await supabase.from('profiles').update({
+        is_active: false,
+        email: `deleted_${emp.id}@deleted.com`,
+      }).eq('id', emp.id)
+
+      if (error) throw error
+
+      // Remove module visibility
+      await supabase.from('user_module_visibility').delete().eq('user_id', emp.id)
+
+      setMessage(`✅ ${emp.full_name} removed from system!`)
+      setShowDetail(null)
+      fetchEmployees()
+    } catch (e) {
+      setMessage('❌ ' + e.message)
     }
   }
 
@@ -264,21 +296,38 @@ export default function Employees({ profile }) {
       emp.department?.toLowerCase().includes(search.toLowerCase())
   })
 
+  const activeCount = employees.filter(e => e.is_active).length
+
   return (
     <div className="fade-in">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ color: '#111', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>People</h2>
+          <h2 style={{ color: '#111', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>Employees</h2>
           <p style={{ color: '#888', margin: 0, fontSize: '13px' }}>
-            {employees.filter(e => e.is_active).length} active · {employees.length} total
+            {activeCount} active · {employees.length} total
           </p>
         </div>
-        {isAdmin && (
-          <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
-            + Add Member
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Show Inactive Toggle */}
+          <button
+            onClick={() => setShowInactive(!showInactive)}
+            style={{
+              padding: '7px 12px', borderRadius: '8px',
+              border: `1px solid ${showInactive ? '#d71920' : '#e5e5e5'}`,
+              background: showInactive ? 'rgba(215,25,32,0.06)' : 'white',
+              color: showInactive ? '#d71920' : '#888',
+              cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+            }}
+          >
+            {showInactive ? '👁️ Showing All' : '👁️ Show Inactive'}
           </button>
-        )}
+          {isAdmin && (
+            <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
+              + Add Employee
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Role Stats */}
@@ -287,7 +336,7 @@ export default function Employees({ profile }) {
           <div key={role.id} style={{
             background: 'white', borderRadius: '10px', padding: '14px',
             textAlign: 'center', border: `1px solid ${role.color}22`,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer'
+            cursor: 'pointer', transition: 'all 0.2s'
           }} onClick={() => setFilterRole(filterRole === role.id ? 'all' : role.id)}>
             <div style={{ color: role.color, fontSize: '20px', fontWeight: '800' }}>
               {employees.filter(e => e.role === role.id).length}
@@ -301,11 +350,7 @@ export default function Employees({ profile }) {
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <input type="text" placeholder="🔍 Search name, email..."
           value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{
-            flex: 1, minWidth: '200px', padding: '8px 14px',
-            background: 'white', border: '1px solid #e5e5e5',
-            borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none'
-          }}
+          style={{ flex: 1, minWidth: '200px', padding: '8px 14px', background: 'white', border: '1px solid #e5e5e5', borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none' }}
         />
         <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}
           style={{ padding: '8px 12px', background: 'white', border: '1px solid #e5e5e5', borderRadius: '8px', color: '#111', fontSize: '13px', outline: 'none' }}>
@@ -337,11 +382,11 @@ export default function Employees({ profile }) {
       ) : filtered.length === 0 ? (
         <div className="empty-state card">
           <div className="empty-icon">👥</div>
-          <div className="empty-title">No members found</div>
+          <div className="empty-title">No employees found</div>
           <div className="empty-desc">Add team members to get started</div>
           {isAdmin && (
             <button onClick={() => setShowModal(true)} className="btn btn-primary" style={{ marginTop: '12px' }}>
-              + Add Member
+              + Add Employee
             </button>
           )}
         </div>
@@ -357,35 +402,44 @@ export default function Employees({ profile }) {
                 className="card card-clickable"
                 onClick={() => setShowDetail(emp)}
                 style={{
-                  opacity: emp.is_active ? 1 : 0.55,
-                  borderTop: `3px solid ${roleConfig.color}`
+                  opacity: emp.is_active ? 1 : 0.5,
+                  borderTop: `3px solid ${roleConfig.color}`,
+                  position: 'relative'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div className="avatar avatar-lg" style={{
-                      background: `${roleConfig.color}15`,
-                      color: roleConfig.color,
-                      border: `2px solid ${roleConfig.color}25`,
-                      fontSize: '20px', fontWeight: '800'
-                    }}>
-                      {emp.full_name?.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ color: '#111', fontWeight: '800', fontSize: '15px' }}>{emp.full_name}</div>
-                      <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
-                        {emp.designation || emp.department || 'No designation'}
-                      </div>
-                    </div>
-                  </div>
-                  <span style={{
-                    background: `${roleConfig.color}12`,
-                    color: roleConfig.color,
-                    padding: '3px 10px', borderRadius: '20px',
-                    fontSize: '11px', fontWeight: '700', flexShrink: 0
+                {/* Inactive Badge */}
+                {!emp.is_active && (
+                  <div style={{
+                    position: 'absolute', top: '12px', right: '12px',
+                    background: 'rgba(215,25,32,0.1)', color: '#d71920',
+                    padding: '2px 8px', borderRadius: '20px',
+                    fontSize: '10px', fontWeight: '800'
                   }}>
-                    {roleConfig.label}
-                  </span>
+                    INACTIVE
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                  <div className="avatar avatar-lg" style={{
+                    background: `${roleConfig.color}15`,
+                    color: roleConfig.color,
+                    border: `2px solid ${roleConfig.color}25`,
+                    fontSize: '20px', fontWeight: '800'
+                  }}>
+                    {emp.full_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ color: '#111', fontWeight: '800', fontSize: '15px' }}>{emp.full_name}</div>
+                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
+                      {emp.designation || emp.department || 'No designation'}
+                    </div>
+                    <span style={{
+                      background: `${roleConfig.color}12`, color: roleConfig.color,
+                      padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700'
+                    }}>
+                      {roleConfig.label}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Task Stats */}
@@ -395,10 +449,7 @@ export default function Employees({ profile }) {
                     { label: 'Active', value: stats.inProgress, color: '#2563eb' },
                     { label: 'Done', value: stats.done, color: '#16a34a' },
                   ].map(s => (
-                    <div key={s.label} style={{
-                      flex: 1, background: '#f9f9f9', borderRadius: '8px',
-                      padding: '8px', textAlign: 'center'
-                    }}>
+                    <div key={s.label} style={{ flex: 1, background: '#f9f9f9', borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
                       <div style={{ color: s.color, fontSize: '16px', fontWeight: '800' }}>{s.value}</div>
                       <div style={{ color: '#aaa', fontSize: '10px' }}>{s.label}</div>
                     </div>
@@ -439,8 +490,9 @@ export default function Employees({ profile }) {
         <div className="modal-overlay" onClick={() => setShowDetail(null)}>
           <div className="modal" style={{ maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}>
+
             <div style={{
-              background: `linear-gradient(135deg, ${getRoleConfig(showDetail.role).color}12, white)`,
+              background: `linear-gradient(135deg, ${getRoleConfig(showDetail.role).color}18, white)`,
               padding: '24px', borderBottom: '1px solid #e5e5e5'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -460,14 +512,20 @@ export default function Employees({ profile }) {
                     <div style={{ color: '#888', fontSize: '13px', marginBottom: '6px' }}>
                       {showDetail.designation || 'No designation'} · {showDetail.department || 'No department'}
                     </div>
-                    <span style={{
-                      background: `${getRoleConfig(showDetail.role).color}12`,
-                      color: getRoleConfig(showDetail.role).color,
-                      padding: '3px 10px', borderRadius: '20px',
-                      fontSize: '12px', fontWeight: '700'
-                    }}>
-                      {getRoleConfig(showDetail.role).label}
-                    </span>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        background: `${getRoleConfig(showDetail.role).color}12`,
+                        color: getRoleConfig(showDetail.role).color,
+                        padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '700'
+                      }}>
+                        {getRoleConfig(showDetail.role).label}
+                      </span>
+                      {!showDetail.is_active && (
+                        <span style={{ background: 'rgba(215,25,32,0.1)', color: '#d71920', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '700' }}>
+                          INACTIVE
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <button onClick={() => setShowDetail(null)} style={{
@@ -479,6 +537,7 @@ export default function Employees({ profile }) {
             </div>
 
             <div style={{ padding: '20px' }}>
+              {/* Info */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
                 {[
                   { label: 'Email', value: showDetail.email || '—', icon: '📧' },
@@ -518,8 +577,9 @@ export default function Employees({ profile }) {
                 </div>
               )}
 
+              {/* Admin Actions */}
               {isAdmin && (
-                <div style={{ display: 'flex', gap: '8px', paddingTop: '16px', borderTop: '1px solid #e5e5e5' }}>
+                <div style={{ display: 'flex', gap: '8px', paddingTop: '16px', borderTop: '1px solid #e5e5e5', flexWrap: 'wrap' }}>
                   <button onClick={() => { openEdit(showDetail); setShowDetail(null) }} className="btn btn-secondary btn-sm">
                     ✏️ Edit & Permissions
                   </button>
@@ -529,6 +589,9 @@ export default function Employees({ profile }) {
                     border: `1px solid ${showDetail.is_active ? 'rgba(215,25,32,0.2)' : 'rgba(22,163,74,0.2)'}`,
                   }}>
                     {showDetail.is_active ? '🔒 Deactivate' : '✅ Activate'}
+                  </button>
+                  <button onClick={() => deleteEmployee(showDetail)} className="btn btn-danger btn-sm">
+                    🗑️ Delete
                   </button>
                 </div>
               )}
@@ -547,7 +610,7 @@ export default function Employees({ profile }) {
               position: 'sticky', top: 0, background: 'white', zIndex: 10
             }}>
               <h3 style={{ color: '#111', margin: 0, fontSize: '17px', fontWeight: '800' }}>
-                {editEmployee ? '✏️ Edit Member' : '+ Add New Member'}
+                {editEmployee ? '✏️ Edit Employee' : '+ Add New Employee'}
               </h3>
               <button onClick={closeModal} style={{
                 background: '#f5f5f5', border: 'none', borderRadius: '8px',
@@ -565,7 +628,7 @@ export default function Employees({ profile }) {
                 }}>{message}</div>
               )}
 
-              {/* Section: Basic Info */}
+              {/* Basic Info */}
               <div style={{ color: '#bbb', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
                 Basic Info
               </div>
@@ -573,7 +636,7 @@ export default function Employees({ profile }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                 {[
                   { label: 'Full Name *', key: 'full_name', type: 'text', placeholder: 'John Doe' },
-                  { label: 'Email *', key: 'email', type: 'email', placeholder: 'john@company.com', disabled: !!editEmployee },
+                  { label: 'Email *', key: 'email', type: 'email', placeholder: 'john@klipscen.com', disabled: !!editEmployee },
                   { label: 'Phone', key: 'phone', type: 'text', placeholder: '03xx-xxxxxxx' },
                   { label: 'Designation', key: 'designation', type: 'text', placeholder: 'Video Editor' },
                 ].map(field => (
@@ -609,7 +672,7 @@ export default function Employees({ profile }) {
                 </div>
               )}
 
-              {/* Section: Role */}
+              {/* Role */}
               <div style={{ color: '#bbb', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '20px 0 12px' }}>
                 Role
               </div>
@@ -622,14 +685,10 @@ export default function Employees({ profile }) {
                       padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
                       border: `1px solid ${form.role === role.id ? role.color : '#e5e5e5'}`,
                       background: form.role === role.id ? `${role.color}10` : 'white',
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      transition: 'all 0.15s'
+                      display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s'
                     }}>
                     <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: role.color, flexShrink: 0 }} />
-                    <span style={{
-                      color: form.role === role.id ? role.color : '#666',
-                      fontSize: '13px', fontWeight: form.role === role.id ? '700' : '500'
-                    }}>
+                    <span style={{ color: form.role === role.id ? role.color : '#666', fontSize: '13px', fontWeight: form.role === role.id ? '700' : '500' }}>
                       {role.label}
                     </span>
                   </div>
@@ -645,30 +704,21 @@ export default function Employees({ profile }) {
                 </div>
               )}
 
-              {/* Section: App Permissions */}
+              {/* App Permissions */}
               <div style={{
                 background: '#f9f9f9', borderRadius: '12px', padding: '16px',
                 marginBottom: '20px', border: '1px solid #e5e5e5'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div>
-                    <div style={{ color: '#111', fontWeight: '700', fontSize: '14px' }}>
-                      App Permissions
-                    </div>
-                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
-                      Choose what this member can see
-                    </div>
+                    <div style={{ color: '#111', fontWeight: '700', fontSize: '14px' }}>App Permissions</div>
+                    <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>Choose what this employee can see</div>
                   </div>
-                  <button
-                    type="button"
+                  <button type="button"
                     onClick={() => setSelectedModules(ROLE_DEFAULT_MODULES[form.role] || [])}
-                    style={{
-                      background: 'white', border: '1px solid #e5e5e5',
-                      borderRadius: '6px', padding: '4px 10px',
-                      color: '#888', cursor: 'pointer', fontSize: '11px', fontWeight: '600'
-                    }}
+                    style={{ background: 'white', border: '1px solid #e5e5e5', borderRadius: '6px', padding: '4px 10px', color: '#888', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
                   >
-                    Reset to Role Default
+                    Reset to Default
                   </button>
                 </div>
 
@@ -703,7 +753,6 @@ export default function Employees({ profile }) {
                   })}
                 </div>
 
-                {/* Selected count */}
                 <div style={{ color: '#888', fontSize: '12px', marginTop: '10px', textAlign: 'center' }}>
                   {selectedModules.length} of {ALL_MODULES.length} modules enabled
                 </div>
@@ -716,7 +765,7 @@ export default function Employees({ profile }) {
                 <button onClick={handleSubmit} disabled={creating} className="btn btn-primary" style={{
                   flex: 2, justifyContent: 'center', opacity: creating ? 0.7 : 1
                 }}>
-                  {creating ? '⟳ Creating...' : editEmployee ? 'Update Member' : 'Create Member & Set Access'}
+                  {creating ? '⟳ Saving...' : editEmployee ? 'Update Employee' : 'Create Employee'}
                 </button>
               </div>
             </div>
