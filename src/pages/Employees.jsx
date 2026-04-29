@@ -234,26 +234,31 @@ export default function Employees({ profile }) {
   }
 
   const deleteEmployee = async (emp) => {
-    if (!window.confirm(`Delete ${emp.full_name}? Their past data will be kept but they will be removed from the system.`)) return
-    try {
-      // Soft delete — deactivate + clear sensitive info
-      const { error } = await supabase.from('profiles').update({
+  if (!window.confirm(`Delete ${emp.full_name}? Their past data (tasks, time logs) will be kept.`)) return
+  try {
+    // Step 1: Remove module visibility
+    await supabase.from('user_module_visibility')
+      .delete().eq('user_id', emp.id)
+
+    // Step 2: Deactivate + mark as deleted
+    const { error } = await supabase.from('profiles')
+      .update({
         is_active: false,
-        email: `deleted_${emp.id}@deleted.com`,
+        full_name: `[Deleted] ${emp.full_name}`,
+        email: `deleted_${Date.now()}@removed.com`,
+        phone: null,
       }).eq('id', emp.id)
 
-      if (error) throw error
+    if (error) throw error
 
-      // Remove module visibility
-      await supabase.from('user_module_visibility').delete().eq('user_id', emp.id)
-
-      setMessage(`✅ ${emp.full_name} removed from system!`)
-      setShowDetail(null)
-      fetchEmployees()
-    } catch (e) {
-      setMessage('❌ ' + e.message)
-    }
+    setMessage(`✅ ${emp.full_name} deleted!`)
+    setShowDetail(null)
+    fetchEmployees()
+  } catch (e) {
+    setMessage('❌ ' + e.message)
+    console.error(e)
   }
+}
 
   const openEdit = async (emp) => {
     setEditEmployee(emp)
