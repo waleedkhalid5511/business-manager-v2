@@ -77,83 +77,311 @@ export default function Reports({ profile }) {
   }
 
   const handlePrint = () => {
-    const currentTab = TABS.find(t => t.id === activeTab)
-    const printWindow = window.open('', '_blank')
-    const content = printRef.current?.innerHTML || ''
-    const dateLabel = dateRange === 'custom' ? `${customStart} to ${customEnd}` : dateRange === 'week' ? 'Last 7 Days' : dateRange === 'month' ? 'This Month' : dateRange === 'quarter' ? 'Last 90 Days' : 'This Year'
+  const printWindow = window.open('', '_blank')
+  const dateLabel = dateRange === 'custom' ? `${customStart} to ${customEnd}` : dateRange === 'week' ? 'Last 7 Days' : dateRange === 'month' ? 'This Month' : dateRange === 'quarter' ? 'Last 90 Days' : 'This Year'
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Klipscen — ${currentTab?.label} — ${dateLabel}</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; background: white; font-size: 13px; }
-          .print-header { background: linear-gradient(135deg, #d71920, #8b0000); color: white; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; }
-          .print-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-          .print-header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
-          .print-header .date { font-size: 12px; opacity: 0.7; text-align: right; }
-          .print-body { padding: 24px 32px; }
-          .section { margin-bottom: 28px; break-inside: avoid; }
-          .section-title { font-size: 16px; font-weight: 800; color: #111; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid #d71920; display: flex; align-items: center; gap: 8px; }
-          .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
-          .stat-box { background: #f9f9f9; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #e5e5e5; }
-          .stat-value { font-size: 20px; font-weight: 800; }
-          .stat-label { font-size: 10px; color: #888; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          thead tr { background: #f5f5f5; }
-          th { padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #666; border-bottom: 1px solid #e5e5e5; }
-          td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
-          tr:last-child td { border-bottom: none; }
-          .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
-          .badge-green { background: rgba(22,163,74,0.1); color: #16a34a; }
-          .badge-red { background: rgba(215,25,32,0.1); color: #d71920; }
-          .badge-blue { background: rgba(37,99,235,0.1); color: #2563eb; }
-          .badge-yellow { background: rgba(217,119,6,0.1); color: #d97706; }
-          .progress-bar { height: 6px; background: #e5e5e5; border-radius: 99px; overflow: hidden; margin-top: 4px; }
-          .progress-fill { height: 100%; background: #d71920; border-radius: 99px; }
-          .client-card { background: #f9f9f9; border-radius: 10px; padding: 16px; margin-bottom: 12px; border: 1px solid #e5e5e5; border-left: 4px solid #d71920; break-inside: avoid; }
-          .client-name { font-size: 16px; font-weight: 800; color: #111; margin-bottom: 4px; }
-          .client-meta { font-size: 11px; color: #888; margin-bottom: 12px; }
-          .mini-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px; }
-          .mini-stat { background: white; border-radius: 6px; padding: 8px; text-align: center; border: 1px solid #e5e5e5; }
-          .mini-value { font-size: 16px; font-weight: 800; }
-          .mini-label { font-size: 9px; color: #aaa; text-transform: uppercase; }
-          .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e5e5; display: flex; justify-content: space-between; color: #aaa; font-size: 11px; }
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .section { break-inside: avoid; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <div>
-            <h1>Klipscen Management</h1>
-            <p>${currentTab?.label} — ${dateLabel}</p>
-          </div>
-          <div class="date">
-            Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
-            ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </div>
+  // Generate ALL sections
+  const allContent = `
+    ${generateClientSection()}
+    <div style="page-break-before:always"></div>
+    ${generateEmployeeSection()}
+    <div style="page-break-before:always"></div>
+    ${generateProjectSection()}
+    <div style="page-break-before:always"></div>
+    ${generateTimeSection()}
+    <div style="page-break-before:always"></div>
+    ${generateAttendanceSection()}
+  `
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Klipscen — Full Report — ${dateLabel}</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; background: white; font-size: 13px; }
+        .print-header { background: linear-gradient(135deg, #d71920, #8b0000); color: white; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; }
+        .print-header h1 { font-size: 22px; font-weight: 800; }
+        .print-header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+        .print-header .date { font-size: 12px; opacity: 0.7; text-align: right; }
+        .print-body { padding: 24px 32px; }
+        .section { margin-bottom: 32px; }
+        .section-title { font-size: 17px; font-weight: 800; color: #111; margin-bottom: 14px; padding: 10px 14px; background: #f9f9f9; border-left: 4px solid #d71920; border-radius: 0 8px 8px 0; display: flex; align-items: center; gap: 8px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+        .stat-box { background: #f9f9f9; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #e5e5e5; }
+        .stat-value { font-size: 20px; font-weight: 800; }
+        .stat-label { font-size: 10px; color: #888; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+        thead tr { background: #f5f5f5; }
+        th { padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #666; border-bottom: 2px solid #d71920; }
+        td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #fafafa; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+        .badge-green { background: rgba(22,163,74,0.1); color: #16a34a; }
+        .badge-red { background: rgba(215,25,32,0.1); color: #d71920; }
+        .badge-blue { background: rgba(37,99,235,0.1); color: #2563eb; }
+        .badge-yellow { background: rgba(217,119,6,0.1); color: #d97706; }
+        .progress-bar { height: 6px; background: #e5e5e5; border-radius: 99px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #d71920; border-radius: 99px; }
+        .client-card { background: #fafafa; border-radius: 10px; padding: 16px; margin-bottom: 12px; border: 1px solid #e5e5e5; border-left: 4px solid #d71920; break-inside: avoid; }
+        .client-name { font-size: 16px; font-weight: 800; color: #111; margin-bottom: 4px; }
+        .client-meta { font-size: 11px; color: #888; margin-bottom: 12px; }
+        .mini-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px; }
+        .mini-stat { background: white; border-radius: 6px; padding: 8px; text-align: center; border: 1px solid #e5e5e5; }
+        .mini-value { font-size: 16px; font-weight: 800; }
+        .mini-label { font-size: 9px; color: #aaa; text-transform: uppercase; }
+        .footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid #d71920; display: flex; justify-content: space-between; color: #aaa; font-size: 11px; }
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .section { break-inside: avoid; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="print-header">
+        <div>
+          <h1>🏢 Klipscen Management</h1>
+          <p>Complete Business Report — ${dateLabel}</p>
         </div>
-        <div class="print-body">
-          ${generatePrintContent()}
-          <div class="footer">
-            <span>Klipscen Management System</span>
-            <span>Confidential — Internal Use Only</span>
-            <span>Page 1</span>
-          </div>
+        <div class="date">
+          Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
+          ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
         </div>
-      </body>
-      </html>
-    `)
-    printWindow.document.close()
-    printWindow.onload = () => {
-      printWindow.print()
-    }
-  }
+      </div>
+      <div class="print-body">
+        ${allContent}
+        <div class="footer">
+          <span>Klipscen Management System</span>
+          <span>Confidential — Internal Use Only</span>
+          <span>${new Date().getFullYear()}</span>
+        </div>
+      </div>
+    </body>
+    </html>
+  `)
+  printWindow.document.close()
+  printWindow.onload = () => printWindow.print()
+}
+
+const generateClientSection = () => {
+  const totalTime = timeLogs.reduce((sum, l) => sum + (l.duration_minutes || 0), 0)
+  return `
+    <div class="section">
+      <div class="section-title">👤 Client Reports</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" style="color:#2563eb">${clients.length}</div><div class="stat-label">Total Clients</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d97706">${tasks.filter(t => t.status !== 'done').length}</div><div class="stat-label">Active Tasks</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#16a34a">${tasks.filter(t => t.status === 'done').length}</div><div class="stat-label">Completed</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#7c3aed">${formatDuration(totalTime)}</div><div class="stat-label">Time Logged</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d71920">${tasks.filter(t => t.due_date && new Date(t.due_date) < new Date() && t.status !== 'done').length}</div><div class="stat-label">Overdue</div></div>
+      </div>
+      ${clients.map(client => {
+        const stats = getClientStats(client.id)
+        const clientTasks = tasks.filter(t => t.client_id === client.id)
+        return `
+        <div class="client-card">
+          <div class="client-name">👤 ${client.name}</div>
+          <div class="client-meta">${client.email || ''}</div>
+          <div class="mini-stats">
+            <div class="mini-stat"><div class="mini-value" style="color:#888">${stats.total}</div><div class="mini-label">Tasks</div></div>
+            <div class="mini-stat"><div class="mini-value" style="color:#16a34a">${stats.done}</div><div class="mini-label">Done</div></div>
+            <div class="mini-stat"><div class="mini-value" style="color:#2563eb">${stats.total - stats.done}</div><div class="mini-label">Active</div></div>
+            <div class="mini-stat"><div class="mini-value" style="color:#7c3aed">${formatDuration(stats.totalTime)}</div><div class="mini-label">Time</div></div>
+            <div class="mini-stat"><div class="mini-value" style="color:#d71920">${stats.overdue}</div><div class="mini-label">Overdue</div></div>
+          </div>
+          <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px">
+              <span>Progress</span><span style="color:#d71920;font-weight:700">${stats.completion}%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${stats.completion}%"></div></div>
+          </div>
+          ${clientTasks.length > 0 ? `
+          <table>
+            <thead><tr><th>Task</th><th>Assigned To</th><th>Pipeline</th><th>Status</th><th>Due Date</th></tr></thead>
+            <tbody>
+              ${clientTasks.map(task => `
+                <tr>
+                  <td><strong>${task.title}</strong>${task.project ? `<br><span style="color:#888;font-size:10px">📁 ${task.project}</span>` : ''}</td>
+                  <td>${task.assigned_to_profile?.full_name || '—'}</td>
+                  <td>${task.pipeline_percent > 0 ? `${task.pipeline_percent}%` : '—'}</td>
+                  <td><span class="badge ${task.status === 'done' ? 'badge-green' : task.status === 'in_progress' ? 'badge-blue' : 'badge-yellow'}">${task.status?.replace('_',' ')}</span></td>
+                  <td>${task.due_date ? new Date(task.due_date).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>` : ''}
+        </div>`
+      }).join('')}
+    </div>
+  `
+}
+
+const generateEmployeeSection = () => {
+  return `
+    <div class="section">
+      <div class="section-title">👥 Employee Performance Report</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" style="color:#2563eb">${employees.length}</div><div class="stat-label">Total Members</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#16a34a">${tasks.filter(t=>t.status==='done').length}</div><div class="stat-label">Tasks Done</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#7c3aed">${formatDuration(timeLogs.reduce((s,l)=>s+(l.duration_minutes||0),0))}</div><div class="stat-label">Hours Logged</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d97706">${attendance.filter(a=>a.status==='late').length}</div><div class="stat-label">Late Days</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d71920">${attendance.filter(a=>a.status==='absent').length}</div><div class="stat-label">Absent Days</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Employee</th><th>Role</th><th>Department</th><th>Tasks</th><th>Done</th>
+            <th>Completion</th><th>Time Logged</th><th>Present</th><th>Late</th><th>Absent</th><th>Late Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${employees.map(emp => {
+            const stats = getEmployeeStats(emp.id)
+            return `
+            <tr>
+              <td><strong>${emp.full_name}</strong></td>
+              <td><span class="badge badge-blue" style="text-transform:capitalize">${emp.role?.replace('_',' ')}</span></td>
+              <td style="color:#888;font-size:11px">${emp.department || '—'}</td>
+              <td style="text-align:center">${stats.total}</td>
+              <td style="text-align:center;color:#16a34a;font-weight:700">${stats.done}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${stats.completion}%"></div></div>
+                  <span style="color:#d71920;font-weight:700;font-size:11px;white-space:nowrap">${stats.completion}%</span>
+                </div>
+              </td>
+              <td style="color:#7c3aed;font-weight:600">${formatDuration(stats.totalTime)}</td>
+              <td style="text-align:center;color:#16a34a;font-weight:700">${stats.presentDays}</td>
+              <td style="text-align:center;color:#d97706;font-weight:700">${stats.lateDays}</td>
+              <td style="text-align:center;color:#d71920;font-weight:700">${stats.absentDays}</td>
+              <td style="color:${stats.lateMinutes > 0 ? '#d97706' : '#888'}">${stats.lateMinutes > 0 ? formatDuration(stats.lateMinutes) : '—'}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
+const generateProjectSection = () => {
+  return `
+    <div class="section">
+      <div class="section-title">📁 Project Status Report</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" style="color:#2563eb">${projects.length}</div><div class="stat-label">Projects</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#16a34a">${projects.filter(p=>getProjectStats(p).completion===100).length}</div><div class="stat-label">Completed</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d71920">${projects.filter(p=>getProjectStats(p).overdue>0).length}</div><div class="stat-label">At Risk</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#7c3aed">${formatDuration(timeLogs.reduce((s,l)=>s+(l.duration_minutes||0),0))}</div><div class="stat-label">Time Logged</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d97706">${tasks.length}</div><div class="stat-label">Total Tasks</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Project</th><th>Client</th><th>Tasks</th><th>Done</th><th>Progress</th><th>Time</th><th>Team</th><th>Status</th></tr></thead>
+        <tbody>
+          ${projects.map(p => {
+            const stats = getProjectStats(p)
+            return `
+            <tr>
+              <td><strong>📁 ${p.name}</strong></td>
+              <td>${p.client ? `<span style="color:#d71920">👤 ${p.client.name}</span>` : '—'}</td>
+              <td style="text-align:center">${p.tasks.length}</td>
+              <td style="text-align:center;color:#16a34a;font-weight:700">${stats.done}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${stats.completion}%"></div></div>
+                  <span style="color:#d71920;font-weight:700;font-size:11px">${stats.completion}%</span>
+                </div>
+              </td>
+              <td style="color:#7c3aed;font-weight:600">${formatDuration(stats.totalTime)}</td>
+              <td style="font-size:11px">${stats.members.slice(0,3).join(', ')}${stats.members.length > 3 ? ` +${stats.members.length-3}` : ''}</td>
+              <td><span class="badge ${stats.overdue > 0 ? 'badge-red' : stats.completion === 100 ? 'badge-green' : 'badge-blue'}">${stats.overdue > 0 ? '⚠️ At Risk' : stats.completion === 100 ? '✅ Done' : '🔄 Active'}</span></td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
+const generateTimeSection = () => {
+  const byEmployee = getTimeByEmployee()
+  const byClient = getTimeByClient()
+  const totalTime = timeLogs.reduce((sum, l) => sum + (l.duration_minutes || 0), 0)
+  return `
+    <div class="section">
+      <div class="section-title">⏱ Time Tracking Report</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" style="color:#7c3aed">${formatDuration(totalTime)}</div><div class="stat-label">Total Time</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#2563eb">${timeLogs.length}</div><div class="stat-label">Total Logs</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#16a34a">${new Set(timeLogs.map(l=>l.task?.id).filter(Boolean)).size}</div><div class="stat-label">Tasks Worked</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d71920">${byEmployee[0]?.name?.split(' ')[0] || '—'}</div><div class="stat-label">Top Worker</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d97706">${timeLogs.length > 0 ? formatDuration(Math.round(totalTime/timeLogs.length)) : '0m'}</div><div class="stat-label">Avg Per Log</div></div>
+      </div>
+
+      <strong style="display:block;margin-bottom:8px;font-size:13px">By Employee:</strong>
+      <table>
+        <thead><tr><th>Employee</th><th>Time Logged</th><th>Tasks</th><th>% of Total</th></tr></thead>
+        <tbody>
+          ${byEmployee.map(e => `
+          <tr>
+            <td><strong>${e.name}</strong></td>
+            <td style="color:#7c3aed;font-weight:700">${formatDuration(e.total)}</td>
+            <td style="text-align:center">${e.taskCount}</td>
+            <td style="color:#d71920;font-weight:700">${totalTime > 0 ? Math.round((e.total/totalTime)*100) : 0}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <strong style="display:block;margin-bottom:8px;font-size:13px">By Client:</strong>
+      <table>
+        <thead><tr><th>Client</th><th>Time Logged</th><th>% of Total</th></tr></thead>
+        <tbody>
+          ${byClient.map(c => `
+          <tr>
+            <td><strong>${c.name}</strong></td>
+            <td style="color:#d71920;font-weight:700">${formatDuration(c.total)}</td>
+            <td>${totalTime > 0 ? Math.round((c.total/totalTime)*100) : 0}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
+const generateAttendanceSection = () => {
+  const summary = getAttendanceSummary()
+  return `
+    <div class="section">
+      <div class="section-title">📅 Attendance Report</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" style="color:#2563eb">${attendance.length}</div><div class="stat-label">Records</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#16a34a">${attendance.filter(a=>a.status==='present').length}</div><div class="stat-label">Present</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d97706">${attendance.filter(a=>a.status==='late').length}</div><div class="stat-label">Late</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#d71920">${attendance.filter(a=>a.status==='absent').length}</div><div class="stat-label">Absent</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#7c3aed">${attendance.filter(a=>a.status==='on_leave').length}</div><div class="stat-label">On Leave</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Employee</th><th>Department</th><th>Present</th><th>Late</th><th>Absent</th><th>On Leave</th><th>Late Time</th><th>Rate</th></tr>
+        </thead>
+        <tbody>
+          ${summary.map(emp => `
+          <tr>
+            <td><strong>${emp.name}</strong></td>
+            <td style="color:#888;font-size:11px">${emp.department || '—'}</td>
+            <td style="text-align:center;color:#16a34a;font-weight:700">${emp.present}</td>
+            <td style="text-align:center;color:#d97706;font-weight:700">${emp.late}</td>
+            <td style="text-align:center;color:#d71920;font-weight:700">${emp.absent}</td>
+            <td style="text-align:center;color:#7c3aed;font-weight:700">${emp.onLeave}</td>
+            <td style="color:${emp.lateMinutes > 0 ? '#d97706' : '#888'}">${emp.lateMinutes > 0 ? formatDuration(emp.lateMinutes) : '—'}</td>
+            <td style="font-weight:700;color:${emp.attendanceRate>=80?'#16a34a':emp.attendanceRate>=60?'#d97706':'#d71920'}">${emp.attendanceRate}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
 
   const generatePrintContent = () => {
     const totalTime = timeLogs.reduce((sum, l) => sum + (l.duration_minutes || 0), 0)
