@@ -89,23 +89,30 @@ export function usePermissions(profile) {
   }
 
   const fetchUserModules = async () => {
-    if (!profile) return
-    try {
-      const { data } = await supabase
-        .from('user_module_visibility')
-        .select('*')
-        .eq('user_id', profile.id)
+  if (!profile) return
+  try {
+    console.log('🔐 Fetching modules for:', profile.id, profile.full_name)
+    
+    const { data, error } = await supabase
+      .from('user_module_visibility')
+      .select('*')
+      .eq('user_id', profile.id)
 
-      if (data && data.length > 0) {
-        setUserModules(data.filter(d => d.is_visible).map(d => d.module_id))
-      } else {
-        // Use role defaults
-        setUserModules(ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES)
-      }
-    } catch (e) {
+    console.log('🔐 Modules data:', data, 'Error:', error)
+
+    if (data && data.length > 0) {
+      const visible = data.filter(d => d.is_visible).map(d => d.module_id)
+      console.log('🔐 Visible modules:', visible)
+      setUserModules(visible)
+    } else {
+      console.log('🔐 No data — using role defaults for:', profile.role)
       setUserModules(ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES)
     }
+  } catch (e) {
+    console.error('🔐 fetchUserModules error:', e)
+    setUserModules(ROLE_DEFAULT_MODULES[profile.role] || ALL_MODULES)
   }
+}
 
   const fetchPresentationMode = async () => {
     try {
