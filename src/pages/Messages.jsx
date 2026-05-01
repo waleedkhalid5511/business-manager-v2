@@ -2,723 +2,595 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 
 export default function Messages({ profile }) {
+  const [activeTab, setActiveTab] = useState('dms') // 'dms' or 'channels'
+  const [employees, setEmployees] = useState([])
   const [channels, setChannels] = useState([])
-  const [activeChannel, setActiveChannel] = useState(null)
+  const [selectedConvo, setSelectedConvo] = useState(null)
   const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
+  const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [search, setSearch] = useState('')
   const [showNewChannel, setShowNewChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
-  const [newChannelDesc, setNewChannelDesc] = useState('')
-  const [search, setSearch] = useState('')
-  const [pinnedMessages, setPinnedMessages] = useState([])
-  const [showPinned, setShowPinned] = useState(false)
-  const [members, setMembers] = useState([])
-  const [showMembers, setShowMembers] = useState(false)
-  const [editingMessage, setEditingMessage] = useState(null)
-  const [editContent, setEditContent] = useState('')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
-  const isAdmin = profile?.role === 'admin'
-  const isManager = profile?.role === 'manager'
 
   useEffect(() => {
-    if (profile) {
-      fetchChannels()
-      fetchMembers()
-    }
+    if (!profile) return
+    fetchEmployees()
+    fetchChannels()
   }, [profile])
 
   useEffect(() => {
-    if (!activeChannel) return
-
+    if (!selectedConvo) return
     fetchMessages()
-    fetchPinnedMessages()
+    const cleanup = subscribeMessages()
+    return cleanup
+  }, [selectedConvo])
 
-    // ⚡ REALTIME
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const fetchEmployees = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, is_active')
+      .eq('is_active', true)
+      .neq('id', profile.id)
+      .order('full_name')
+    setEmployees(data || [])
+    setLoading(false)
+  }
+
+  const fetchChannels = async () => {
+    const { data } = await supabase
+      .from('channels')
+      .select('*')
+      .order('name')
+    setChannels(data || [])
+  }
+
+  const fetchMessages = async () => {
+    if (!selectedConvo) return
+
+    let query
+    if (selectedConvo.type === 'dm') {
+      query = supabase
+        .from('messages')
+        .select('*, profiles(id, full_name, role)')
+        .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${selectedConvo.id}),and(sender_id.eq.${selectedConvo.id},receiver_id.eq.${profile.id})`)
+        .order('created_at', { ascending: true })
+    } else {
+      query = supabase
+        .from('messages')
+        .select('*, profiles(id, full_name, role)')
+        .eq('channel_id', selectedConvo.id)
+        .is('receiver_id', null)
+        .order('created_at', { ascending: true })
+    }
+
+    const { data, error } = await query
+    if (!error) setMessages(data || [])
+  }
+
+  const subscribeMessages = () => {
+    const channelName = selectedConvo.type === 'dm'
+      ? `dm-${[profile.id, selectedConvo.id].sort().join('-')}`
+      : `channel-${selectedConvo.id}`
+
     const sub = supabase
-      .channel(`messages-live-${activeChannel.id}`)
+      .channel(channelName)
       .on('postgres_changes', {
-        event: '*', schema: 'public',
-        table: 'messages',
-        filter: `channel_id=eq.${activeChannel.id}`
-      }, () => {
-        fetchMessages()
-        fetchPinnedMessages()
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages'
+      }, async (payload) => {
+        const { data } = await supabase
+          .from('messages')
+          .select('*, profiles(id, full_name, role)')
+          .eq('id', payload.new.id)
+          .single()
+        if (data) setMessages(prev => [...prev, data])
       })
       .subscribe()
 
     return () => sub.unsubscribe()
-  }, [activeChannel])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  const fetchChannels = async () => {
-    const { data } = await supabase
-      .from('channels').select('*')
-      .order('created_at', { ascending: true })
-    setChannels(data || [])
-    if (data && data.length > 0 && !activeChannel) setActiveChannel(data[0])
-  }
-
-  const fetchMessages = async () => {
-    if (!activeChannel) return
-    const { data } = await supabase
-      .from('messages')
-      .select('*, profiles(full_name, role, avatar_url)')
-      .eq('channel_id', activeChannel.id)
-      .order('created_at', { ascending: true })
-      .limit(100)
-    setMessages(data || [])
-  }
-
-  const fetchPinnedMessages = async () => {
-    if (!activeChannel) return
-    const { data } = await supabase
-      .from('messages')
-      .select('*, profiles(full_name)')
-      .eq('channel_id', activeChannel.id)
-      .eq('is_edited', true)
-      .order('created_at', { ascending: false })
-      .limit(10)
-    setPinnedMessages(data || [])
-  }
-
-  const fetchMembers = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name, role, avatar_url')
-      .eq('is_active', true)
-    setMembers(data || [])
   }
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !activeChannel) return
+    if (!newMessage.trim() || !selectedConvo || sending) return
     setSending(true)
-    await supabase.from('messages').insert({
-      channel_id: activeChannel.id,
-      sender_id: profile.id,
-      content: newMessage.trim()
-    })
-    setNewMessage('')
-    setSending(false)
-  }
 
-  const deleteMessage = async (msgId) => {
-    await supabase.from('messages').delete().eq('id', msgId)
-  }
+    try {
+      const msgData = {
+        content: newMessage.trim(),
+        sender_id: profile.id,
+        receiver_id: selectedConvo.type === 'dm' ? selectedConvo.id : null,
+        channel_id: selectedConvo.type === 'channel' ? selectedConvo.id : null,
+      }
 
-  const pinMessage = async (msg) => {
-    await supabase.from('messages')
-      .update({ is_edited: !msg.is_edited })
-      .eq('id', msg.id)
-  }
+      // Optimistic update
+      const optimistic = {
+        id: 'temp-' + Date.now(),
+        ...msgData,
+        created_at: new Date().toISOString(),
+        profiles: { id: profile.id, full_name: profile.full_name, role: profile.role }
+      }
+      setMessages(prev => [...prev, optimistic])
+      setNewMessage('')
 
-  const startEdit = (msg) => {
-    setEditingMessage(msg.id)
-    setEditContent(msg.content)
-  }
-
-  const saveEdit = async (msgId) => {
-    if (!editContent.trim()) return
-    await supabase.from('messages')
-      .update({ content: editContent.trim() })
-      .eq('id', msgId)
-    setEditingMessage(null)
-    setEditContent('')
+      const { error } = await supabase.from('messages').insert(msgData)
+      if (error) {
+        setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+        console.error(error)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSending(false)
+      inputRef.current?.focus()
+    }
   }
 
   const createChannel = async () => {
     if (!newChannelName.trim()) return
     const { data } = await supabase.from('channels').insert({
-      name: newChannelName.toLowerCase().replace(/\s+/g, '-'),
-      description: newChannelDesc,
+      name: newChannelName.trim().toLowerCase().replace(/\s+/g, '-'),
       created_by: profile.id
     }).select().single()
-    setNewChannelName('')
-    setNewChannelDesc('')
-    setShowNewChannel(false)
-    fetchChannels()
-    if (data) setActiveChannel(data)
-  }
 
-  const deleteChannel = async (channelId) => {
-    if (!window.confirm('Delete this channel and all messages?')) return
-    await supabase.from('messages').delete().eq('channel_id', channelId)
-    await supabase.from('channels').delete().eq('id', channelId)
-    setActiveChannel(null)
-    fetchChannels()
-  }
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+    if (data) {
+      setChannels(prev => [...prev, data])
+      setNewChannelName('')
+      setShowNewChannel(false)
+      selectConvo({ ...data, type: 'channel' })
     }
   }
 
-  const formatTime = (ts) => new Date(ts).toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit'
-  })
-
-  const formatDate = (ts) => {
-    const date = new Date(ts)
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-    if (date.toDateString() === today.toDateString()) return 'Today'
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
-    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const selectConvo = (convo) => {
+    setSelectedConvo(convo)
+    setMessages([])
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
+
+  const formatTime = (ts) => {
+    const d = new Date(ts)
+    const now = new Date()
+    const diff = now - d
+
+    if (diff < 60000) return 'now'
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m`
+    if (diff < 86400000) return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  const formatFullTime = (ts) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 
   const roleColor = {
-    admin: '#ef4444', manager: '#f59e0b',
-    employee: '#3b82f6', partner: '#8b5cf6', client: '#10b981'
+    admin: '#d71920', manager: '#d97706', employee: '#2563eb',
+    partner: '#7c3aed', junior_editor: '#0891b2', senior_editor: '#059669',
+    client_manager: '#d97706', qa_reviewer: '#7c3aed'
   }
 
+  const filteredEmployees = employees.filter(e =>
+    e.full_name?.toLowerCase().includes(search.toLowerCase())
+  )
+  const filteredChannels = channels.filter(c =>
+    c.name?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  // Group messages by date
   const groupedMessages = messages.reduce((groups, msg) => {
-    const date = new Date(msg.created_at).toDateString()
+    const date = new Date(msg.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
     if (!groups[date]) groups[date] = []
     groups[date].push(msg)
     return groups
   }, {})
 
-  const filteredMessages = search
-    ? messages.filter(m => m.content?.toLowerCase().includes(search.toLowerCase()))
-    : null
-
   return (
-    <div style={{
-      display: 'flex',
-      height: 'calc(100vh - 104px)',
-      borderRadius: '16px',
-      overflow: 'hidden',
-      border: '1px solid var(--border)',
-      background: 'var(--bg-secondary)'
-    }}>
-      {/* SIDEBAR */}
-      <div style={{
-        width: '240px', background: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column', flexShrink: 0
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '14px 16px', borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-        }}>
-          <div>
-            <div style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>Workspace</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
-              <div className="status-dot online" style={{ width: '6px', height: '6px' }} />
-              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{members.length} members</span>
-            </div>
-          </div>
-        </div>
+    <div style={{ display: 'flex', height: 'calc(100vh - 104px)', background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
 
-        {/* Search */}
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-          <input type="text" placeholder="🔍 Search messages..."
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            style={{
-              width: '100%', padding: '7px 10px', background: 'var(--bg-hover)',
-              border: '1px solid var(--border)', borderRadius: '6px',
-              color: 'var(--text-primary)', fontSize: '12px', outline: 'none', boxSizing: 'border-box'
-            }}
+      {/* ===== SIDEBAR ===== */}
+      <div style={{ width: '280px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', flexShrink: 0 }}>
+
+        {/* Header */}
+        <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+          <h3 style={{ color: 'var(--text-primary)', fontWeight: '800', fontSize: '16px', marginBottom: '12px' }}>
+            💬 Messages
+          </h3>
+          {/* Search */}
+          <input
+            type="text"
+            placeholder="Search..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="input"
+            style={{ padding: '8px 12px', fontSize: '13px' }}
           />
         </div>
 
-        {/* Channels List */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 16px 6px' }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Channels
-            </span>
-            {(isAdmin || isManager) && (
-              <button onClick={() => setShowNewChannel(true)} className="btn-icon" style={{ fontSize: '18px', padding: '2px 6px' }}>+</button>
-            )}
-          </div>
-
-          {channels.map(channel => (
-            <div key={channel.id} style={{ position: 'relative' }}>
-              <button onClick={() => { setActiveChannel(channel); setShowMembers(false) }} style={{
-                width: '100%', padding: '7px 16px',
-                background: activeChannel?.id === channel.id ? 'rgba(59,130,246,0.12)' : 'transparent',
-                border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.15s'
-              }}>
-                <span style={{ color: activeChannel?.id === channel.id ? 'var(--accent-blue)' : 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>#</span>
-                <span style={{
-                  color: activeChannel?.id === channel.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: '14px', fontWeight: activeChannel?.id === channel.id ? '600' : '400',
-                  flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                }}>
-                  {channel.name}
-                </span>
-                {activeChannel?.id === channel.id && isAdmin && (
-                  <button onClick={(e) => { e.stopPropagation(); deleteChannel(channel.id) }} style={{
-                    background: 'transparent', border: 'none', color: 'var(--text-muted)',
-                    cursor: 'pointer', fontSize: '12px', padding: '2px', opacity: 0.6
-                  }}>🗑️</button>
-                )}
-              </button>
-            </div>
-          ))}
-
-          {/* Members Section */}
-          <div style={{ padding: '12px 16px 6px', marginTop: '8px', borderTop: '1px solid var(--border)' }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Members
-            </span>
-          </div>
-          {members.slice(0, 8).map(member => (
-            <div key={member.id} style={{ padding: '5px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ position: 'relative' }}>
-                <div className="avatar" style={{
-                  width: '24px', height: '24px', fontSize: '10px',
-                  background: `${roleColor[member.role] || '#3b82f6'}33`,
-                  color: roleColor[member.role] || '#3b82f6',
-                  border: `1px solid ${roleColor[member.role] || '#3b82f6'}50`
-                }}>
-                  {member.full_name?.charAt(0).toUpperCase()}
-                </div>
-                <div className="status-dot online" style={{
-                  position: 'absolute', bottom: '-1px', right: '-1px',
-                  width: '7px', height: '7px', border: '1.5px solid var(--bg-secondary)'
-                }} />
-              </div>
-              <span style={{
-                color: member.id === profile.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-              }}>
-                {member.full_name}
-                {member.id === profile.id && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}> (you)</span>}
-              </span>
-            </div>
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 8px' }}>
+          {[
+            { id: 'dms', label: '👤 Direct' },
+            { id: 'channels', label: '# Channels' }
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+              flex: 1, padding: '10px 8px', border: 'none',
+              background: 'transparent', cursor: 'pointer',
+              color: activeTab === tab.id ? '#d71920' : 'var(--text-muted)',
+              fontWeight: activeTab === tab.id ? '700' : '500',
+              fontSize: '12px', borderBottom: `2px solid ${activeTab === tab.id ? '#d71920' : 'transparent'}`,
+              transition: 'all 0.2s'
+            }}>
+              {tab.label}
+            </button>
           ))}
         </div>
 
-        {/* My Profile */}
-        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ position: 'relative' }}>
-            <div className="avatar avatar-sm" style={{
-              background: `${roleColor[profile?.role] || '#3b82f6'}33`,
-              color: roleColor[profile?.role] || '#3b82f6',
-              border: `1px solid ${roleColor[profile?.role] || '#3b82f6'}50`
-            }}>
-              {profile?.full_name?.charAt(0).toUpperCase()}
-            </div>
-            <div className="status-dot online" style={{
-              position: 'absolute', bottom: '-1px', right: '-1px',
-              width: '8px', height: '8px', border: '2px solid var(--bg-secondary)'
-            }} />
-          </div>
-          <div style={{ overflow: 'hidden', flex: 1 }}>
-            <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {profile?.full_name}
-            </div>
-            <div style={{ color: roleColor[profile?.role] || 'var(--text-muted)', fontSize: '10px', textTransform: 'capitalize' }}>
-              {profile?.role}
-            </div>
-          </div>
+        {/* List */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+          {loading ? (
+            [1,2,3,4].map(i => (
+              <div key={i} className="skeleton" style={{ height: '52px', borderRadius: '10px', marginBottom: '6px' }} />
+            ))
+          ) : activeTab === 'dms' ? (
+            <>
+              {filteredEmployees.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  No team members
+                </div>
+              ) : filteredEmployees.map(emp => {
+                const isSelected = selectedConvo?.id === emp.id && selectedConvo?.type === 'dm'
+                const color = roleColor[emp.role] || '#888'
+                return (
+                  <div key={emp.id}
+                    onClick={() => selectConvo({ ...emp, type: 'dm' })}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+                      background: isSelected ? 'rgba(215,25,32,0.08)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(215,25,32,0.15)' : '1px solid transparent',
+                      marginBottom: '2px', transition: 'all 0.15s'
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-hover)' }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%',
+                      background: `${color}18`, color,
+                      border: `2px solid ${color}30`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: '800', fontSize: '14px', flexShrink: 0, position: 'relative'
+                    }}>
+                      {emp.full_name?.charAt(0).toUpperCase()}
+                      <div style={{
+                        position: 'absolute', bottom: 0, right: 0,
+                        width: '9px', height: '9px', borderRadius: '50%',
+                        background: '#16a34a', border: '2px solid var(--bg-card)'
+                      }} />
+                    </div>
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <div style={{
+                        color: isSelected ? '#d71920' : 'var(--text-primary)',
+                        fontWeight: isSelected ? '700' : '600', fontSize: '13px',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                      }}>
+                        {emp.full_name}
+                      </div>
+                      <div style={{ color: color, fontSize: '10px', fontWeight: '600', textTransform: 'capitalize' }}>
+                        {emp.role?.replace('_', ' ')}
+                      </div>
+                    </div>
+                    {isSelected && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#d71920', flexShrink: 0 }} />}
+                  </div>
+                )
+              })}
+            </>
+          ) : (
+            <>
+              {/* Add Channel */}
+              {showNewChannel ? (
+                <div style={{ padding: '8px', marginBottom: '4px' }}>
+                  <input
+                    type="text"
+                    placeholder="channel-name"
+                    value={newChannelName}
+                    onChange={e => setNewChannelName(e.target.value)}
+                    className="input"
+                    style={{ marginBottom: '6px', fontSize: '13px', padding: '8px 12px' }}
+                    onKeyDown={e => { if (e.key === 'Enter') createChannel(); if (e.key === 'Escape') setShowNewChannel(false) }}
+                    autoFocus
+                  />
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={createChannel} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>Create</button>
+                    <button onClick={() => setShowNewChannel(false)} className="btn btn-secondary btn-sm">✕</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowNewChannel(true)} style={{
+                  width: '100%', padding: '9px 12px', border: '1px dashed var(--border)',
+                  borderRadius: '10px', background: 'transparent', color: 'var(--text-muted)',
+                  cursor: 'pointer', fontSize: '12px', fontWeight: '600', marginBottom: '6px',
+                  display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s'
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#d71920'; e.currentTarget.style.color = '#d71920' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)' }}
+                >
+                  + New Channel
+                </button>
+              )}
+
+              {filteredChannels.map(channel => {
+                const isSelected = selectedConvo?.id === channel.id && selectedConvo?.type === 'channel'
+                return (
+                  <div key={channel.id}
+                    onClick={() => selectConvo({ ...channel, type: 'channel' })}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+                      background: isSelected ? 'rgba(215,25,32,0.08)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(215,25,32,0.15)' : '1px solid transparent',
+                      marginBottom: '2px', transition: 'all 0.15s'
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-hover)' }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <div style={{
+                      width: '34px', height: '34px', borderRadius: '10px',
+                      background: isSelected ? 'rgba(215,25,32,0.1)' : 'var(--bg-hover)',
+                      color: isSelected ? '#d71920' : 'var(--text-muted)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: '800', fontSize: '15px', flexShrink: 0
+                    }}>
+                      #
+                    </div>
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <div style={{
+                        color: isSelected ? '#d71920' : 'var(--text-primary)',
+                        fontWeight: isSelected ? '700' : '600', fontSize: '13px',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                      }}>
+                        {channel.name}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )}
         </div>
       </div>
 
-      {/* MAIN CHAT */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {activeChannel ? (
-          <>
-            {/* Channel Header */}
-            <div style={{
-              height: '56px', padding: '0 20px',
-              borderBottom: '1px solid var(--border)',
-              background: 'var(--bg-secondary)',
-              display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between', flexShrink: 0
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '20px', fontWeight: '300' }}>#</span>
-                <div>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: '700', fontSize: '15px' }}>
-                    {activeChannel.name}
-                  </span>
-                  {activeChannel.description && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '12px', marginLeft: '10px' }}>
-                      {activeChannel.description}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <button onClick={() => setShowMembers(!showMembers)} className="btn-icon" style={{ fontSize: '14px', gap: '5px', padding: '6px 10px' }}>
-                  👥 <span style={{ fontSize: '12px' }}>{members.length}</span>
-                </button>
-                <button onClick={() => setShowPinned(!showPinned)} className="btn-icon" style={{
-                  fontSize: '14px', padding: '6px 10px',
-                  background: showPinned ? 'var(--bg-hover)' : 'transparent',
-                  color: showPinned ? 'var(--accent-yellow)' : 'var(--text-muted)'
+      {/* ===== CHAT AREA ===== */}
+      {!selectedConvo ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '56px', marginBottom: '16px', opacity: 0.25, animation: 'float 3s ease infinite' }}>💬</div>
+          <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+            Select a conversation
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            Choose a person or channel to start messaging
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
+          {/* Chat Header */}
+          <div style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            background: 'var(--bg-card)'
+          }}>
+            {selectedConvo.type === 'dm' ? (
+              <>
+                <div style={{
+                  width: '38px', height: '38px', borderRadius: '50%',
+                  background: `${roleColor[selectedConvo.role] || '#d71920'}18`,
+                  color: roleColor[selectedConvo.role] || '#d71920',
+                  border: `2px solid ${roleColor[selectedConvo.role] || '#d71920'}30`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '800', fontSize: '15px', position: 'relative'
                 }}>
-                  📌
-                  {pinnedMessages.length > 0 && (
-                    <span style={{
-                      background: 'var(--accent-yellow)', color: 'black',
-                      borderRadius: '10px', padding: '1px 5px',
-                      fontSize: '10px', fontWeight: '700', marginLeft: '2px'
-                    }}>{pinnedMessages.length}</span>
-                  )}
-                </button>
-                <div style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 4px' }} />
-                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{messages.length} msgs</span>
-              </div>
-            </div>
-
-            {/* Pinned Messages */}
-            {showPinned && pinnedMessages.length > 0 && (
-              <div style={{
-                background: 'rgba(245,158,11,0.05)', borderBottom: '1px solid rgba(245,158,11,0.2)',
-                padding: '12px 20px', flexShrink: 0
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '14px' }}>📌</span>
-                  <span style={{ color: 'var(--accent-yellow)', fontSize: '12px', fontWeight: '700' }}>
-                    Pinned Messages ({pinnedMessages.length})
-                  </span>
+                  {selectedConvo.full_name?.charAt(0).toUpperCase()}
+                  <div style={{
+                    position: 'absolute', bottom: 0, right: 0,
+                    width: '10px', height: '10px', borderRadius: '50%',
+                    background: '#16a34a', border: '2px solid var(--bg-card)'
+                  }} />
                 </div>
-                {pinnedMessages.map(msg => (
-                  <div key={msg.id} style={{
-                    background: 'var(--bg-hover)', borderRadius: '8px', padding: '8px 12px',
-                    marginBottom: '6px', borderLeft: '3px solid var(--accent-yellow)'
-                  }}>
-                    <span style={{ color: 'var(--accent-yellow)', fontSize: '11px', fontWeight: '700' }}>{msg.profiles?.full_name}</span>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px', marginLeft: '8px' }}>{msg.content}</span>
+                <div>
+                  <div style={{ color: 'var(--text-primary)', fontWeight: '800', fontSize: '15px' }}>
+                    {selectedConvo.full_name}
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* Search Results */}
-            {search && filteredMessages && (
-              <div style={{
-                background: 'var(--bg-hover)', borderBottom: '1px solid var(--border)',
-                padding: '12px 20px', maxHeight: '200px', overflowY: 'auto', flexShrink: 0
-              }}>
-                <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '8px' }}>
-                  {filteredMessages.length} results for "{search}"
+                  <div style={{ color: '#16a34a', fontSize: '11px', fontWeight: '600' }}>Online</div>
                 </div>
-                {filteredMessages.map(msg => (
-                  <div key={msg.id} style={{ background: 'var(--bg-card)', borderRadius: '8px', padding: '8px 12px', marginBottom: '6px' }}>
-                    <div style={{ color: 'var(--accent-blue)', fontSize: '11px', marginBottom: '3px', fontWeight: '700' }}>
-                      {msg.profiles?.full_name} · {formatTime(msg.created_at)}
-                    </div>
-                    <div style={{ color: 'var(--text-primary)', fontSize: '13px' }}>{msg.content}</div>
+              </>
+            ) : (
+              <>
+                <div style={{
+                  width: '38px', height: '38px', borderRadius: '10px',
+                  background: 'rgba(215,25,32,0.1)', color: '#d71920',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '800', fontSize: '18px'
+                }}>
+                  #
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-primary)', fontWeight: '800', fontSize: '15px' }}>
+                    {selectedConvo.name}
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* Messages */}
-            <div style={{
-              flex: 1, overflowY: 'auto', padding: '16px 20px',
-              display: 'flex', flexDirection: 'column'
-            }}>
-              {messages.length === 0 ? (
-                <div className="empty-state" style={{ flex: 1, justifyContent: 'center' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '8px' }}>#{activeChannel.name}</div>
-                  <div className="empty-title">Welcome to #{activeChannel.name}!</div>
-                  <div className="empty-desc">{activeChannel.description || 'Start the conversation!'}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Channel</div>
                 </div>
-              ) : (
-                Object.entries(groupedMessages).map(([date, msgs]) => (
-                  <div key={date}>
-                    {/* Date Divider */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0' }}>
-                      <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                      <span style={{
-                        color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700',
-                        background: 'var(--bg-hover)', padding: '3px 12px',
-                        borderRadius: '20px', border: '1px solid var(--border)', whiteSpace: 'nowrap'
+              </>
+            )}
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {messages.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: '10px' }}>
+                <div style={{ fontSize: '40px', opacity: 0.3 }}>💬</div>
+                <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                  {selectedConvo.type === 'dm'
+                    ? `Start a conversation with ${selectedConvo.full_name}`
+                    : `Welcome to #${selectedConvo.name}!`
+                  }
+                </div>
+              </div>
+            ) : (
+              Object.entries(groupedMessages).map(([date, dayMessages]) => (
+                <div key={date}>
+                  {/* Date Divider */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '16px 0 12px' }}>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '700', background: 'var(--bg-card)', padding: '2px 10px', borderRadius: '20px', border: '1px solid var(--border)' }}>
+                      {date}
+                    </span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                  </div>
+
+                  {/* Messages for this day */}
+                  {dayMessages.map((msg, idx) => {
+                    const isOwn = msg.sender_id === profile.id || msg.profiles?.id === profile.id
+                    const prevMsg = idx > 0 ? dayMessages[idx - 1] : null
+                    const showAvatar = !prevMsg || prevMsg.sender_id !== msg.sender_id
+                    const showName = showAvatar && !isOwn && selectedConvo.type === 'channel'
+
+                    return (
+                      <div key={msg.id} style={{
+                        display: 'flex',
+                        flexDirection: isOwn ? 'row-reverse' : 'row',
+                        alignItems: 'flex-end',
+                        gap: '8px',
+                        marginBottom: showAvatar ? '12px' : '2px',
+                        animation: msg.id.toString().startsWith('temp') ? 'fadeInFast 0.2s ease' : 'none'
                       }}>
-                        {formatDate(msgs[0].created_at)}
-                      </span>
-                      <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                    </div>
-
-                    {msgs.map((msg, idx) => {
-                      const isOwn = msg.sender_id === profile?.id
-                      const prevMsg = msgs[idx - 1]
-                      const showHeader = !prevMsg || prevMsg.sender_id !== msg.sender_id ||
-                        (new Date(msg.created_at) - new Date(prevMsg.created_at)) > 5 * 60 * 1000
-
-                      return (
-                        <div
-                          key={msg.id}
-                          style={{
-                            display: 'flex',
-                            flexDirection: isOwn ? 'row-reverse' : 'row',
-                            gap: '8px',
-                            marginBottom: showHeader ? '12px' : '3px',
-                            alignItems: 'flex-end'
-                          }}
-                          onMouseEnter={e => {
-                            const actions = e.currentTarget.querySelector('.msg-actions')
-                            if (actions) actions.style.opacity = '1'
-                          }}
-                          onMouseLeave={e => {
-                            const actions = e.currentTarget.querySelector('.msg-actions')
-                            if (actions) actions.style.opacity = '0'
-                          }}
-                        >
-                          {/* Avatar */}
-                          {showHeader ? (
-                            <div className="avatar" style={{
-                              width: '32px', height: '32px', fontSize: '13px',
-                              background: `${roleColor[msg.profiles?.role] || '#3b82f6'}33`,
-                              color: roleColor[msg.profiles?.role] || '#3b82f6',
-                              border: `1px solid ${roleColor[msg.profiles?.role] || '#3b82f6'}40`,
-                              flexShrink: 0, alignSelf: 'flex-end'
+                        {/* Avatar */}
+                        <div style={{ width: '28px', height: '28px', flexShrink: 0 }}>
+                          {showAvatar && !isOwn ? (
+                            <div style={{
+                              width: '28px', height: '28px', borderRadius: '50%',
+                              background: `${roleColor[msg.profiles?.role] || '#888'}18`,
+                              color: roleColor[msg.profiles?.role] || '#888',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontWeight: '800', fontSize: '11px',
+                              border: `1.5px solid ${roleColor[msg.profiles?.role] || '#888'}25`
                             }}>
                               {msg.profiles?.full_name?.charAt(0).toUpperCase()}
                             </div>
-                          ) : (
-                            <div style={{ width: '32px', flexShrink: 0 }} />
+                          ) : null}
+                        </div>
+
+                        <div style={{ maxWidth: '65%', display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                          {/* Sender name */}
+                          {showName && (
+                            <div style={{ color: roleColor[msg.profiles?.role] || 'var(--text-muted)', fontSize: '11px', fontWeight: '700', marginBottom: '3px', paddingLeft: '2px' }}>
+                              {msg.profiles?.full_name}
+                            </div>
                           )}
 
-                          <div style={{ maxWidth: '65%', minWidth: 0 }}>
-                            {/* Name + Time */}
-                            {showHeader && (
-                              <div style={{
-                                display: 'flex', alignItems: 'baseline', gap: '8px',
-                                marginBottom: '4px',
-                                flexDirection: isOwn ? 'row-reverse' : 'row'
-                              }}>
-                                <span style={{
-                                  color: roleColor[msg.profiles?.role] || 'var(--accent-blue)',
-                                  fontSize: '13px', fontWeight: '700'
-                                }}>
-                                  {isOwn ? 'You' : msg.profiles?.full_name}
-                                </span>
-                                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                                  {formatTime(msg.created_at)}
-                                </span>
-                                {msg.is_edited && (
-                                  <span style={{ color: 'var(--accent-yellow)', fontSize: '10px', fontWeight: '700' }}>📌</span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Bubble */}
-                            {editingMessage === msg.id ? (
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <input value={editContent}
-                                  onChange={(e) => setEditContent(e.target.value)}
-                                  onKeyPress={(e) => e.key === 'Enter' && saveEdit(msg.id)}
-                                  style={{
-                                    flex: 1, padding: '8px 12px', background: 'var(--bg-hover)',
-                                    border: '1px solid var(--accent-blue)', borderRadius: '8px',
-                                    color: 'var(--text-primary)', fontSize: '13px', outline: 'none'
-                                  }} autoFocus />
-                                <button onClick={() => saveEdit(msg.id)} className="btn btn-primary btn-sm">Save</button>
-                                <button onClick={() => setEditingMessage(null)} className="btn btn-secondary btn-sm">✕</button>
-                              </div>
-                            ) : (
-                              <div style={{
-                                padding: '10px 14px',
-                                background: isOwn
-                                  ? 'linear-gradient(135deg, #3b82f6, #8b5cf6)' : 'var(--bg-card)',
-                                border: isOwn ? 'none' : '1px solid var(--border)',
-                                borderRadius: isOwn ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-                                color: 'white',
-                                fontSize: '14px', lineHeight: '1.5',
-                                wordBreak: 'break-word',
-                                display: 'inline-block',
-                                maxWidth: '100%'
-                              }}>
-                                {msg.content}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Actions */}
-                          <div className="msg-actions" style={{
-                            display: 'flex', gap: '2px',
-                            opacity: 0, transition: 'opacity 0.15s',
-                            background: 'var(--bg-card)', border: '1px solid var(--border)',
-                            borderRadius: '8px', padding: '3px',
-                            boxShadow: 'var(--shadow-md)',
-                            alignSelf: 'center'
+                          {/* Bubble */}
+                          <div style={{
+                            padding: '10px 14px',
+                            borderRadius: isOwn ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
+                            background: isOwn
+                              ? 'linear-gradient(135deg, #d71920, #b5151b)'
+                              : 'var(--bg-hover)',
+                            color: isOwn ? 'white' : 'var(--text-primary)',
+                            fontSize: '14px',
+                            lineHeight: '1.5',
+                            wordBreak: 'break-word',
+                            border: isOwn ? 'none' : '1px solid var(--border)',
+                            boxShadow: isOwn
+                              ? '0 3px 10px rgba(215,25,32,0.2)'
+                              : 'var(--shadow-sm)',
+                            opacity: msg.id.toString().startsWith('temp') ? 0.7 : 1,
+                            transition: 'opacity 0.2s'
                           }}>
-                            {(isAdmin || isManager) && (
-                              <button onClick={() => pinMessage(msg)} className="btn-icon" style={{
-                                fontSize: '12px', padding: '3px 6px',
-                                color: msg.is_edited ? 'var(--accent-yellow)' : 'var(--text-muted)'
-                              }}>📌</button>
-                            )}
-                            {isOwn && (
-                              <button onClick={() => startEdit(msg)} className="btn-icon" style={{ fontSize: '12px', padding: '3px 6px' }}>✏️</button>
-                            )}
-                            {(isOwn || isAdmin) && (
-                              <button onClick={() => deleteMessage(msg.id)} className="btn-icon" style={{ fontSize: '12px', padding: '3px 6px', color: 'var(--accent-red)' }}>🗑️</button>
-                            )}
+                            {msg.content}
+                          </div>
+
+                          {/* Time */}
+                          <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '3px', paddingLeft: '2px', paddingRight: '2px' }}>
+                            {formatFullTime(msg.created_at)}
+                            {msg.id.toString().startsWith('temp') && <span style={{ marginLeft: '4px' }}>⏳</span>}
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                ))
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Message Input */}
-            <div style={{
-              padding: '12px 16px', borderTop: '1px solid var(--border)',
-              background: 'var(--bg-secondary)', flexShrink: 0
-            }}>
-              <div style={{
-                background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                borderRadius: '12px', display: 'flex', alignItems: 'center', overflow: 'hidden'
-              }}>
-                <input
-                  ref={inputRef}
-                  type="text" value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder={`Message #${activeChannel.name}...`}
-                  style={{
-                    flex: 1, padding: '13px 16px', background: 'transparent',
-                    border: 'none', color: 'var(--text-primary)', fontSize: '14px', outline: 'none'
-                  }}
-                />
-                <button onClick={sendMessage} disabled={sending || !newMessage.trim()} style={{
-                  width: '38px', height: '38px', margin: '4px 8px 4px 0',
-                  borderRadius: '8px', border: 'none',
-                  background: sending || !newMessage.trim() ? 'var(--border)' : 'var(--accent-blue)',
-                  color: sending || !newMessage.trim() ? 'var(--text-muted)' : 'white',
-                  cursor: sending || !newMessage.trim() ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '16px', transition: 'all 0.2s'
-                }}>➤</button>
-              </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '6px', paddingLeft: '4px' }}>
-                Press <kbd style={{
-                  background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                  borderRadius: '3px', padding: '1px 5px', fontSize: '10px'
-                }}>Enter</kbd> to send
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="empty-state" style={{ flex: 1 }}>
-            <div className="empty-icon">💬</div>
-            <div className="empty-title">Select a channel</div>
-            <div className="empty-desc">Choose a channel to start messaging</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        )}
-      </div>
 
-      {/* Members Panel */}
-      {showMembers && (
-        <div style={{
-          width: '220px', background: 'var(--bg-secondary)',
-          borderLeft: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column', flexShrink: 0
-        }}>
+          {/* Message Input */}
           <div style={{
-            padding: '14px 16px', borderBottom: '1px solid var(--border)',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            padding: '14px 20px',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-card)'
           }}>
-            <span style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '14px' }}>
-              Members ({members.length})
-            </span>
-            <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ fontSize: '14px' }}>✕</button>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
-            {['admin', 'manager', 'employee', 'partner'].map(role => {
-              const roleMembers = members.filter(m => m.role === role)
-              if (!roleMembers.length) return null
-              return (
-                <div key={role} style={{ marginBottom: '16px' }}>
-                  <div style={{
-                    color: 'var(--text-muted)', fontSize: '10px', fontWeight: '700',
-                    textTransform: 'uppercase', letterSpacing: '0.08em', padding: '4px 8px', marginBottom: '6px'
-                  }}>
-                    {role}s — {roleMembers.length}
-                  </div>
-                  {roleMembers.map(member => (
-                    <div key={member.id} style={{
-                      display: 'flex', alignItems: 'center', gap: '10px',
-                      padding: '7px 8px', borderRadius: '8px', cursor: 'pointer',
-                      transition: 'background 0.15s'
-                    }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <div style={{ position: 'relative' }}>
-                        <div className="avatar avatar-sm" style={{
-                          background: `${roleColor[member.role] || '#3b82f6'}33`,
-                          color: roleColor[member.role] || '#3b82f6',
-                          border: `1px solid ${roleColor[member.role] || '#3b82f6'}40`
-                        }}>
-                          {member.full_name?.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="status-dot online" style={{
-                          position: 'absolute', bottom: '-1px', right: '-1px',
-                          width: '8px', height: '8px', border: '2px solid var(--bg-secondary)'
-                        }} />
-                      </div>
-                      <div style={{ overflow: 'hidden' }}>
-                        <div style={{
-                          color: 'var(--text-primary)', fontSize: '13px',
-                          fontWeight: member.id === profile.id ? '700' : '400',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                        }}>
-                          {member.full_name}
-                          {member.id === profile.id && <span style={{ color: 'var(--text-muted)', fontWeight: '400', fontSize: '11px' }}> you</span>}
-                        </div>
-                        <div style={{ color: roleColor[member.role] || 'var(--text-muted)', fontSize: '10px', textTransform: 'capitalize' }}>
-                          {member.role}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* New Channel Modal */}
-      {showNewChannel && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '420px' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '17px', fontWeight: '700' }}>Create Channel</h3>
-              <button onClick={() => setShowNewChannel(false)} className="btn-icon">✕</button>
+            <div style={{
+              display: 'flex', gap: '10px', alignItems: 'flex-end',
+              background: 'var(--bg-hover)', borderRadius: '14px',
+              border: '1.5px solid var(--border)', padding: '10px 14px',
+              transition: 'border-color 0.2s'
+            }}
+              onFocusCapture={e => e.currentTarget.style.borderColor = '#d71920'}
+              onBlurCapture={e => e.currentTarget.style.borderColor = 'var(--border)'}
+            >
+              <textarea
+                ref={inputRef}
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                placeholder={selectedConvo.type === 'dm'
+                  ? `Message ${selectedConvo.full_name}...`
+                  : `Message #${selectedConvo.name}...`
+                }
+                rows={1}
+                style={{
+                  flex: 1, border: 'none', outline: 'none', resize: 'none',
+                  background: 'transparent', color: 'var(--text-primary)',
+                  fontSize: '14px', lineHeight: '1.5', fontFamily: 'inherit',
+                  maxHeight: '120px', overflowY: 'auto'
+                }}
+                onInput={e => {
+                  e.target.style.height = 'auto'
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim() || sending}
+                style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  background: newMessage.trim() ? 'var(--gradient-red)' : 'var(--border)',
+                  border: 'none', cursor: newMessage.trim() ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontSize: '16px', flexShrink: 0,
+                  transition: 'all 0.2s', boxShadow: newMessage.trim() ? 'var(--shadow-red)' : 'none',
+                  transform: newMessage.trim() ? 'scale(1)' : 'scale(0.95)'
+                }}
+              >
+                {sending ? <span className="animate-spin">⟳</span> : '↑'}
+              </button>
             </div>
-            <div style={{ padding: '20px 24px' }}>
-              <div style={{ marginBottom: '14px' }}>
-                <label className="input-label">Channel Name</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '18px' }}>#</span>
-                  <input type="text" value={newChannelName}
-                    onChange={(e) => setNewChannelName(e.target.value)}
-                    placeholder="e.g. design-team" className="input" style={{ flex: 1 }}
-                    onKeyPress={(e) => e.key === 'Enter' && createChannel()} />
-                </div>
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label className="input-label">Description (Optional)</label>
-                <input type="text" value={newChannelDesc}
-                  onChange={(e) => setNewChannelDesc(e.target.value)}
-                  placeholder="What is this channel about?" className="input" />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setShowNewChannel(false)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
-                <button onClick={createChannel} className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>Create Channel</button>
-              </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '6px', textAlign: 'center' }}>
+              Press Enter to send · Shift+Enter for new line
             </div>
           </div>
         </div>
