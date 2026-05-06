@@ -152,16 +152,20 @@ export default function Messages({ profile }) {
     setMessages(prev => [...prev, optimistic])
 
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          content,
-          sender_id: profile.id,
-          receiver_id: selectedConvo.type === 'dm' ? selectedConvo.id : null,
-          channel_id: selectedConvo.type === 'channel' ? selectedConvo.id : null,
-        })
-        .select('*, profiles(id, full_name, role)')
-        .single()
+     const { data, error } = await supabase
+  .from('messages')
+  .insert({
+    content,
+    sender_id: profile.id,
+    receiver_id: selectedConvo.type === 'dm' ? selectedConvo.id : null,
+    channel_id: selectedConvo.type === 'channel' ? selectedConvo.id : null,
+    topic: selectedConvo.type === 'dm' ? 'dm' : selectedConvo.name || 'general',
+    extension: 'klipscen',
+    event: 'message',
+    private: selectedConvo.type === 'dm',
+  })
+  .select('*, profiles(id, full_name, role)')
+  .single()
 
       if (error) {
         console.error('Send error:', error)
