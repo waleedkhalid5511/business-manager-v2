@@ -74,7 +74,7 @@ export default function Messages({ profile }) {
           .order('created_at', { ascending: true })
       } else {
         res = await supabase
-          .from('messages')
+          .from('chat_messages')
           .select('*, profiles(id, full_name, role)')
           .eq('channel_id', convo.id)
           .order('created_at', { ascending: true })
@@ -92,7 +92,7 @@ export default function Messages({ profile }) {
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'messages'
+        table: 'chat_messages'
       }, async (payload) => {
         const current = selectedConvoRef.current
         if (!current) return
@@ -153,7 +153,7 @@ export default function Messages({ profile }) {
 
     try {
      const { data, error } = await supabase
-  .from('messages')
+  .from('chat_messages')
   .insert({
     content,
     sender_id: profile.id,
