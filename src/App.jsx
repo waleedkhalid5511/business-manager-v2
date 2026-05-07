@@ -179,6 +179,16 @@ function MainApp({ session }) {
 
   const isLoading = profileLoading || permLoading
 
+if (isLoading) return (
+  <div style={{
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
+    height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
+  }}>
+    <div style={{ textAlign: 'center', color: 'white' }}>
+      <div style={{ fontSize: '13px', letterSpacing: '2px', opacity: 0.7 }}>LOADING...</div>
+    </div>
+  </div>
+)
   useEffect(() => { getProfile() }, [])
 
   useEffect(() => {
