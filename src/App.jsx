@@ -49,7 +49,7 @@ const LogoDark = ({ size = 140 }) => (
 
 export default function App() {
   const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [, set] = useState(true)
 
   useEffect(() => {
     // Apply saved theme on load
@@ -58,20 +58,25 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setLoading(false)
+      set(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) return null (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)' }}>
-      <div style={{ textAlign: 'center' }}>
-        <LogoWhite size={200} />
-        <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', marginTop: '20px', letterSpacing: '2px' }}>LOADING...</div>
+ if (loading) return (
+  <div style={{
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
+    height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
+  }}>
+    <div style={{ textAlign: 'center' }}>
+      <LogoWhite size={200} />
+      <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', marginTop: '20px', letterSpacing: '2px' }}>
+        LOADING...
       </div>
     </div>
-  )
+  </div>
+)
 
   return !session ? <LoginPage /> : <MainApp session={session} />
 }
