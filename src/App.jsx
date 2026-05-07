@@ -57,14 +57,25 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', saved)
     } catch(e) {}
 
+    // Timeout fallback — 3 sec baad force load
+    const timeout = setTimeout(() => setAppLoading(false), 3000)
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(timeout)
       setSession(session)
       setAppLoading(false)
+    }).catch(() => {
+      clearTimeout(timeout)
+      setAppLoading(false)
     })
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => setSession(session)
     )
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   if (appLoading) return (
