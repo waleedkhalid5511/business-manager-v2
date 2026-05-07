@@ -49,32 +49,37 @@ const LogoDark = ({ size = 140 }) => (
 
 export default function App() {
   const [session, setSession] = useState(null)
-  const [, set] = useState(true)
+  const [appLoading, setAppLoading] = useState(true)
 
   useEffect(() => {
-    // Apply saved theme on load
-    const saved = localStorage.getItem('theme')
-    if (saved) document.documentElement.setAttribute('data-theme', saved)
+    try {
+      const saved = localStorage.getItem('theme') || 'light'
+      document.documentElement.setAttribute('data-theme', saved)
+    } catch(e) {}
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      set(false)
+      setAppLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => setSession(session)
+    )
     return () => subscription.unsubscribe()
   }, [])
 
-if (loading) return (
-  <div style={{
-    display: 'flex', justifyContent: 'center', alignItems: 'center',
-    height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
-  }}>
-    <div style={{ textAlign: 'center', color: 'white' }}>
-      <div style={{ fontSize: '48px', marginBottom: '16px' }}>⟳</div>
-      <div style={{ fontSize: '13px', letterSpacing: '2px', opacity: 0.7 }}>LOADING...</div>
+  if (appLoading) return (
+    <div style={{
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <LogoWhite size={200} />
+        <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', marginTop: '20px', letterSpacing: '2px' }}>
+          LOADING...
+        </div>
+      </div>
     </div>
-  </div>
-)
+  )
 
   return !session ? <LoginPage /> : <MainApp session={session} />
 }
