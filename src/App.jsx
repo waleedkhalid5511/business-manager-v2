@@ -64,16 +64,14 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
- if (loading) return (
+if (loading) return (
   <div style={{
     display: 'flex', justifyContent: 'center', alignItems: 'center',
     height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)'
   }}>
-    <div style={{ textAlign: 'center' }}>
-      <LogoWhite size={200} />
-      <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', marginTop: '20px', letterSpacing: '2px' }}>
-        LOADING...
-      </div>
+    <div style={{ textAlign: 'center', color: 'white' }}>
+      <div style={{ fontSize: '48px', marginBottom: '16px' }}>⟳</div>
+      <div style={{ fontSize: '13px', letterSpacing: '2px', opacity: 0.7 }}>LOADING...</div>
     </div>
   </div>
 )
