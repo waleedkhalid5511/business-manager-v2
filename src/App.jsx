@@ -64,7 +64,7 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) return (
+  if (loading) return null (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'linear-gradient(135deg, #d71920, #8b0000)' }}>
       <div style={{ textAlign: 'center' }}>
         <LogoWhite size={200} />
